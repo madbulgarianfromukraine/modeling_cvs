@@ -1,0 +1,7 @@
+# Minimal requirements - add as needed
+numpy>=1.24
+pandas>=2.1
+scikit-learn>=1.2
+matplotlib>=3.7
+jupyter
+pytest
