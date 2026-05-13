@@ -1,0 +1,302 @@
+=== STAGE 1: Head Warm-up ===
+Starting training of the stage 1 in 20 epochs.
+Warm-up Epoch 1/20...
+Train Epoch: 1 [0/25 (0%)]	Loss: 2.864128
+Train Epoch: 1 [384/25 (12%)]	Loss: 2.891661
+Train Epoch: 1 [768/25 (24%)]	Loss: 2.845421
+Train Epoch: 1 [1152/25 (36%)]	Loss: 2.765871
+Train Epoch: 1 [1536/25 (48%)]	Loss: 2.850782
+Train Epoch: 1 [1920/25 (60%)]	Loss: 2.824545
+Train Epoch: 1 [2304/25 (72%)]	Loss: 2.840574
+Train Epoch: 1 [2688/25 (84%)]	Loss: 2.867070
+Train Epoch: 1 [3072/25 (96%)]	Loss: 2.821311
+--- Epoch 1 Training Metrics ---
+Accuracy: 196/3200 (6.12%) | Confidence: 0.1291
+Total time of epoch 1 is 32.76s
+
+Warm-up Epoch 2/20...
+Train Epoch: 2 [0/25 (0%)]	Loss: 2.738635
+Train Epoch: 2 [384/25 (12%)]	Loss: 2.805494
+Train Epoch: 2 [768/25 (24%)]	Loss: 2.814221
+Train Epoch: 2 [1152/25 (36%)]	Loss: 2.803579
+Train Epoch: 2 [1536/25 (48%)]	Loss: 2.711784
+Train Epoch: 2 [1920/25 (60%)]	Loss: 2.831194
+Train Epoch: 2 [2304/25 (72%)]	Loss: 2.697514
+Train Epoch: 2 [2688/25 (84%)]	Loss: 2.728970
+Train Epoch: 2 [3072/25 (96%)]	Loss: 2.741559
+--- Epoch 2 Training Metrics ---
+Accuracy: 291/3200 (9.09%) | Confidence: 0.1298
+Total time of epoch 2 is 31.83s
+
+Warm-up Epoch 3/20...
+Train Epoch: 3 [0/25 (0%)]	Loss: 2.705458
+Train Epoch: 3 [384/25 (12%)]	Loss: 2.672760
+Train Epoch: 3 [768/25 (24%)]	Loss: 2.685888
+Train Epoch: 3 [1152/25 (36%)]	Loss: 2.700849
+Train Epoch: 3 [1536/25 (48%)]	Loss: 2.718172
+Train Epoch: 3 [1920/25 (60%)]	Loss: 2.683759
+Train Epoch: 3 [2304/25 (72%)]	Loss: 2.722228
+Train Epoch: 3 [2688/25 (84%)]	Loss: 2.701632
+Train Epoch: 3 [3072/25 (96%)]	Loss: 2.691039
+--- Epoch 3 Training Metrics ---
+Accuracy: 434/3200 (13.56%) | Confidence: 0.1331
+Total time of epoch 3 is 33.01s
+
+Warm-up Epoch 4/20...
+Train Epoch: 4 [0/25 (0%)]	Loss: 2.702430
+Train Epoch: 4 [384/25 (12%)]	Loss: 2.615264
+Train Epoch: 4 [768/25 (24%)]	Loss: 2.595373
+Train Epoch: 4 [1152/25 (36%)]	Loss: 2.642218
+Train Epoch: 4 [1536/25 (48%)]	Loss: 2.638411
+Train Epoch: 4 [1920/25 (60%)]	Loss: 2.608972
+Train Epoch: 4 [2304/25 (72%)]	Loss: 2.598028
+Train Epoch: 4 [2688/25 (84%)]	Loss: 2.622899
+Train Epoch: 4 [3072/25 (96%)]	Loss: 2.579774
+--- Epoch 4 Training Metrics ---
+Accuracy: 528/3200 (16.50%) | Confidence: 0.1379
+Total time of epoch 4 is 33.09s
+
+Warm-up Epoch 5/20...
+Train Epoch: 5 [0/25 (0%)]	Loss: 2.592201
+Train Epoch: 5 [384/25 (12%)]	Loss: 2.604871
+Train Epoch: 5 [768/25 (24%)]	Loss: 2.705670
+Train Epoch: 5 [1152/25 (36%)]	Loss: 2.534922
+Train Epoch: 5 [1536/25 (48%)]	Loss: 2.565295
+Train Epoch: 5 [1920/25 (60%)]	Loss: 2.473045
+Train Epoch: 5 [2304/25 (72%)]	Loss: 2.499258
+Train Epoch: 5 [2688/25 (84%)]	Loss: 2.566043
+Train Epoch: 5 [3072/25 (96%)]	Loss: 2.493833
+--- Epoch 5 Training Metrics ---
+Accuracy: 613/3200 (19.16%) | Confidence: 0.1436
+
+--- Epoch 5 Evaluation ---
+Test set: Accuracy: 148/800 (18.50%)
+
+Total time of epoch 5 is 41.73s
+
+Warm-up Epoch 6/20...
+Train Epoch: 6 [0/25 (0%)]	Loss: 2.537308
+Train Epoch: 6 [384/25 (12%)]	Loss: 2.512262
+Train Epoch: 6 [768/25 (24%)]	Loss: 2.564854
+Train Epoch: 6 [1152/25 (36%)]	Loss: 2.425039
+Train Epoch: 6 [1536/25 (48%)]	Loss: 2.523595
+Train Epoch: 6 [1920/25 (60%)]	Loss: 2.646292
+Train Epoch: 6 [2304/25 (72%)]	Loss: 2.513961
+Train Epoch: 6 [2688/25 (84%)]	Loss: 2.429622
+Train Epoch: 6 [3072/25 (96%)]	Loss: 2.562469
+--- Epoch 6 Training Metrics ---
+Accuracy: 707/3200 (22.09%) | Confidence: 0.1495
+Total time of epoch 6 is 32.80s
+
+Warm-up Epoch 7/20...
+Train Epoch: 7 [0/25 (0%)]	Loss: 2.501530
+Train Epoch: 7 [384/25 (12%)]	Loss: 2.472198
+Train Epoch: 7 [768/25 (24%)]	Loss: 2.424685
+Train Epoch: 7 [1152/25 (36%)]	Loss: 2.428656
+Train Epoch: 7 [1536/25 (48%)]	Loss: 2.438788
+Train Epoch: 7 [1920/25 (60%)]	Loss: 2.349090
+Train Epoch: 7 [2304/25 (72%)]	Loss: 2.408081
+Train Epoch: 7 [2688/25 (84%)]	Loss: 2.529918
+Train Epoch: 7 [3072/25 (96%)]	Loss: 2.423492
+--- Epoch 7 Training Metrics ---
+Accuracy: 778/3200 (24.31%) | Confidence: 0.1553
+Total time of epoch 7 is 32.77s
+
+Warm-up Epoch 8/20...
+Train Epoch: 8 [0/25 (0%)]	Loss: 2.323910
+Train Epoch: 8 [384/25 (12%)]	Loss: 2.409602
+Train Epoch: 8 [768/25 (24%)]	Loss: 2.410563
+Train Epoch: 8 [1152/25 (36%)]	Loss: 2.378639
+Train Epoch: 8 [1536/25 (48%)]	Loss: 2.480283
+Train Epoch: 8 [1920/25 (60%)]	Loss: 2.493479
+Train Epoch: 8 [2304/25 (72%)]	Loss: 2.411584
+Train Epoch: 8 [2688/25 (84%)]	Loss: 2.390342
+Train Epoch: 8 [3072/25 (96%)]	Loss: 2.386038
+--- Epoch 8 Training Metrics ---
+Accuracy: 865/3200 (27.03%) | Confidence: 0.1610
+Total time of epoch 8 is 32.42s
+
+Warm-up Epoch 9/20...
+Train Epoch: 9 [0/25 (0%)]	Loss: 2.325645
+Train Epoch: 9 [384/25 (12%)]	Loss: 2.382332
+Train Epoch: 9 [768/25 (24%)]	Loss: 2.343298
+Train Epoch: 9 [1152/25 (36%)]	Loss: 2.480569
+Train Epoch: 9 [1536/25 (48%)]	Loss: 2.333501
+Train Epoch: 9 [1920/25 (60%)]	Loss: 2.283070
+Train Epoch: 9 [2304/25 (72%)]	Loss: 2.329328
+Train Epoch: 9 [2688/25 (84%)]	Loss: 2.341151
+Train Epoch: 9 [3072/25 (96%)]	Loss: 2.380006
+--- Epoch 9 Training Metrics ---
+Accuracy: 928/3200 (29.00%) | Confidence: 0.1664
+Total time of epoch 9 is 34.18s
+
+Warm-up Epoch 10/20...
+Train Epoch: 10 [0/25 (0%)]	Loss: 2.344112
+Train Epoch: 10 [384/25 (12%)]	Loss: 2.377862
+Train Epoch: 10 [768/25 (24%)]	Loss: 2.230134
+Train Epoch: 10 [1152/25 (36%)]	Loss: 2.299092
+Train Epoch: 10 [1536/25 (48%)]	Loss: 2.424052
+Train Epoch: 10 [1920/25 (60%)]	Loss: 2.282264
+Train Epoch: 10 [2304/25 (72%)]	Loss: 2.297517
+Train Epoch: 10 [2688/25 (84%)]	Loss: 2.284341
+Train Epoch: 10 [3072/25 (96%)]	Loss: 2.236977
+--- Epoch 10 Training Metrics ---
+Accuracy: 1022/3200 (31.94%) | Confidence: 0.1716
+
+--- Epoch 10 Evaluation ---
+Test set: Accuracy: 221/800 (27.62%)
+
+Checkpoint saved to /kaggle/working/ at epoch 10
+Total time of epoch 10 is 40.08s
+
+Warm-up Epoch 11/20...
+Train Epoch: 11 [0/25 (0%)]	Loss: 2.293755
+Train Epoch: 11 [384/25 (12%)]	Loss: 2.237992
+Train Epoch: 11 [768/25 (24%)]	Loss: 2.291766
+Train Epoch: 11 [1152/25 (36%)]	Loss: 2.351959
+Train Epoch: 11 [1536/25 (48%)]	Loss: 2.295020
+Train Epoch: 11 [1920/25 (60%)]	Loss: 2.211038
+Train Epoch: 11 [2304/25 (72%)]	Loss: 2.211999
+Train Epoch: 11 [2688/25 (84%)]	Loss: 2.199674
+Train Epoch: 11 [3072/25 (96%)]	Loss: 2.263556
+--- Epoch 11 Training Metrics ---
+Accuracy: 1089/3200 (34.03%) | Confidence: 0.1765
+Total time of epoch 11 is 32.89s
+
+Warm-up Epoch 12/20...
+Train Epoch: 12 [0/25 (0%)]	Loss: 2.238407
+Train Epoch: 12 [384/25 (12%)]	Loss: 2.141689
+Train Epoch: 12 [768/25 (24%)]	Loss: 2.282190
+Train Epoch: 12 [1152/25 (36%)]	Loss: 2.212823
+Train Epoch: 12 [1536/25 (48%)]	Loss: 2.313768
+Train Epoch: 12 [1920/25 (60%)]	Loss: 2.333435
+Train Epoch: 12 [2304/25 (72%)]	Loss: 2.292410
+Train Epoch: 12 [2688/25 (84%)]	Loss: 2.261102
+Train Epoch: 12 [3072/25 (96%)]	Loss: 2.235551
+--- Epoch 12 Training Metrics ---
+Accuracy: 1121/3200 (35.03%) | Confidence: 0.1820
+Total time of epoch 12 is 31.94s
+
+Warm-up Epoch 13/20...
+Train Epoch: 13 [0/25 (0%)]	Loss: 2.242417
+Train Epoch: 13 [384/25 (12%)]	Loss: 2.163512
+Train Epoch: 13 [768/25 (24%)]	Loss: 2.261000
+Train Epoch: 13 [1152/25 (36%)]	Loss: 2.092040
+Train Epoch: 13 [1536/25 (48%)]	Loss: 2.158102
+Train Epoch: 13 [1920/25 (60%)]	Loss: 2.233291
+Train Epoch: 13 [2304/25 (72%)]	Loss: 2.271113
+Train Epoch: 13 [2688/25 (84%)]	Loss: 2.115680
+Train Epoch: 13 [3072/25 (96%)]	Loss: 2.148476
+--- Epoch 13 Training Metrics ---
+Accuracy: 1164/3200 (36.38%) | Confidence: 0.1871
+Total time of epoch 13 is 31.84s
+
+Warm-up Epoch 14/20...
+Train Epoch: 14 [0/25 (0%)]	Loss: 2.166242
+Train Epoch: 14 [384/25 (12%)]	Loss: 2.186076
+Train Epoch: 14 [768/25 (24%)]	Loss: 2.266453
+Train Epoch: 14 [1152/25 (36%)]	Loss: 2.166359
+Train Epoch: 14 [1536/25 (48%)]	Loss: 2.027955
+Train Epoch: 14 [1920/25 (60%)]	Loss: 2.162057
+Train Epoch: 14 [2304/25 (72%)]	Loss: 2.185905
+Train Epoch: 14 [2688/25 (84%)]	Loss: 2.171229
+Train Epoch: 14 [3072/25 (96%)]	Loss: 2.175990
+--- Epoch 14 Training Metrics ---
+Accuracy: 1228/3200 (38.38%) | Confidence: 0.1922
+Total time of epoch 14 is 32.42s
+
+Warm-up Epoch 15/20...
+Train Epoch: 15 [0/25 (0%)]	Loss: 2.089605
+Train Epoch: 15 [384/25 (12%)]	Loss: 2.131175
+Train Epoch: 15 [768/25 (24%)]	Loss: 2.175547
+Train Epoch: 15 [1152/25 (36%)]	Loss: 2.237957
+Train Epoch: 15 [1536/25 (48%)]	Loss: 2.198218
+Train Epoch: 15 [1920/25 (60%)]	Loss: 2.107554
+Train Epoch: 15 [2304/25 (72%)]	Loss: 2.116059
+Train Epoch: 15 [2688/25 (84%)]	Loss: 2.191929
+Train Epoch: 15 [3072/25 (96%)]	Loss: 2.120885
+--- Epoch 15 Training Metrics ---
+Accuracy: 1275/3200 (39.84%) | Confidence: 0.1959
+
+--- Epoch 15 Evaluation ---
+Test set: Accuracy: 260/800 (32.50%)
+
+Total time of epoch 15 is 41.46s
+
+Warm-up Epoch 16/20...
+Train Epoch: 16 [0/25 (0%)]	Loss: 2.134392
+Train Epoch: 16 [384/25 (12%)]	Loss: 2.188733
+Train Epoch: 16 [768/25 (24%)]	Loss: 2.102806
+Train Epoch: 16 [1152/25 (36%)]	Loss: 2.052456
+Train Epoch: 16 [1536/25 (48%)]	Loss: 2.065424
+Train Epoch: 16 [1920/25 (60%)]	Loss: 2.289369
+Train Epoch: 16 [2304/25 (72%)]	Loss: 2.087194
+Train Epoch: 16 [2688/25 (84%)]	Loss: 2.164965
+Train Epoch: 16 [3072/25 (96%)]	Loss: 2.053544
+--- Epoch 16 Training Metrics ---
+Accuracy: 1329/3200 (41.53%) | Confidence: 0.2008
+Total time of epoch 16 is 32.96s
+
+Warm-up Epoch 17/20...
+Train Epoch: 17 [0/25 (0%)]	Loss: 2.117923
+Train Epoch: 17 [384/25 (12%)]	Loss: 2.112441
+Train Epoch: 17 [768/25 (24%)]	Loss: 1.940965
+Train Epoch: 17 [1152/25 (36%)]	Loss: 2.084652
+Train Epoch: 17 [1536/25 (48%)]	Loss: 2.110305
+Train Epoch: 17 [1920/25 (60%)]	Loss: 2.118667
+Train Epoch: 17 [2304/25 (72%)]	Loss: 2.102563
+Train Epoch: 17 [2688/25 (84%)]	Loss: 2.083992
+Train Epoch: 17 [3072/25 (96%)]	Loss: 2.041846
+--- Epoch 17 Training Metrics ---
+Accuracy: 1359/3200 (42.47%) | Confidence: 0.2058
+Total time of epoch 17 is 33.42s
+
+Warm-up Epoch 18/20...
+Train Epoch: 18 [0/25 (0%)]	Loss: 2.119944
+Train Epoch: 18 [384/25 (12%)]	Loss: 2.190136
+Train Epoch: 18 [768/25 (24%)]	Loss: 2.015707
+Train Epoch: 18 [1152/25 (36%)]	Loss: 2.074985
+Train Epoch: 18 [1536/25 (48%)]	Loss: 2.058392
+Train Epoch: 18 [1920/25 (60%)]	Loss: 2.143899
+Train Epoch: 18 [2304/25 (72%)]	Loss: 2.180744
+Train Epoch: 18 [2688/25 (84%)]	Loss: 1.949775
+Train Epoch: 18 [3072/25 (96%)]	Loss: 2.002278
+--- Epoch 18 Training Metrics ---
+Accuracy: 1389/3200 (43.41%) | Confidence: 0.2095
+Total time of epoch 18 is 33.40s
+
+Warm-up Epoch 19/20...
+Train Epoch: 19 [0/25 (0%)]	Loss: 2.150890
+Train Epoch: 19 [384/25 (12%)]	Loss: 2.112159
+Train Epoch: 19 [768/25 (24%)]	Loss: 2.039624
+Train Epoch: 19 [1152/25 (36%)]	Loss: 1.998474
+Train Epoch: 19 [1536/25 (48%)]	Loss: 2.080043
+Train Epoch: 19 [1920/25 (60%)]	Loss: 2.022899
+Train Epoch: 19 [2304/25 (72%)]	Loss: 2.020883
+Train Epoch: 19 [2688/25 (84%)]	Loss: 1.981223
+Train Epoch: 19 [3072/25 (96%)]	Loss: 1.995270
+--- Epoch 19 Training Metrics ---
+Accuracy: 1438/3200 (44.94%) | Confidence: 0.2137
+Total time of epoch 19 is 33.45s
+
+Warm-up Epoch 20/20...
+Train Epoch: 20 [0/25 (0%)]	Loss: 2.075955
+Train Epoch: 20 [384/25 (12%)]	Loss: 1.958546
+Train Epoch: 20 [768/25 (24%)]	Loss: 2.079895
+Train Epoch: 20 [1152/25 (36%)]	Loss: 2.077112
+Train Epoch: 20 [1536/25 (48%)]	Loss: 2.069869
+Train Epoch: 20 [1920/25 (60%)]	Loss: 2.044258
+Train Epoch: 20 [2304/25 (72%)]	Loss: 2.024118
+Train Epoch: 20 [2688/25 (84%)]	Loss: 2.065221
+Train Epoch: 20 [3072/25 (96%)]	Loss: 1.983045
+--- Epoch 20 Training Metrics ---
+Accuracy: 1467/3200 (45.84%) | Confidence: 0.2178
+
+--- Epoch 20 Evaluation ---
+Test set: Accuracy: 293/800 (36.62%)
+
+Checkpoint saved to /kaggle/working/ at epoch 20
+Total time of epoch 20 is 42.64s
+
+Checkpoint saved to /kaggle/working/ at epoch 20
+Finished stage 1 in 691.2709262371063

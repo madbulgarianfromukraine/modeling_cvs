@@ -32,3 +32,5 @@ Large files and venvs
 	- Git Large File Storage (Git LFS) for versioned large files.
 	- External storage (S3, GDrive, institutional storage) and store URIs in your experiment metadata.
 	- Keeping package builds (like a full PyTorch wheel) out of git; install them inside the `.uv` venv as needed.
+
+

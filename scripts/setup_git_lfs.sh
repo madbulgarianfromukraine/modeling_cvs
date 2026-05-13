@@ -7,7 +7,7 @@ set -euo pipefail
 git lfs install --local
 # Add patterns from .gitattributes
 if [ -f .gitattributes ]; then
-  git add .gitattributes
+ k git add .gitattributes
   git commit -m "Add .gitattributes for Git LFS" || echo "No changes to commit for .gitattributes"
 else
   echo ".gitattributes not found"
