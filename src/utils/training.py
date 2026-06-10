@@ -1,1 +1,173 @@
-{"metadata":{"kernelspec":{"language":"python","display_name":"Python 3","name":"python3"},"language_info":{"name":"python","version":"3.6.6","mimetype":"text/x-python","codemirror_mode":{"name":"ipython","version":3},"pygments_lexer":"ipython3","nbconvert_exporter":"python","file_extension":".py"},"kaggle":{"accelerator":"none","dataSources":[],"isInternetEnabled":true,"language":"python","sourceType":"script","isGpuEnabled":false}},"nbformat_minor":4,"nbformat":4,"cells":[{"cell_type":"code","source":"import os\nimport time\nimport torch\nimport matplotlib.pyplot as plt\n\nimport torch.nn.functional as F\nfrom typing import List, Tuple, Optional\n\nos.makedirs(\"/kaggle/working/\", exist_ok=True)\ndef save_checkpoint(model, optimizer, epoch, loss, path=\"/kaggle/working/\", file_name=None):\n    \"\"\"\n    Saves a 'Neutral' checkpoint by manually migrating tensors to CPU.\n    Bypasses torch_xla version issues.\n    \"\"\"\n    cpu_state_dict = {k: v.to('cpu') for k, v in model.state_dict().items()}\n    \n    cpu_opt_dict = {}\n    for k, v in optimizer.state_dict().items():\n        if k == 'state':\n            cpu_opt_dict[k] = {idx: {p_k: p_v.to('cpu') if torch.is_tensor(p_v) else p_v \n                                     for p_k, p_v in p_v.items()} \n                               for idx, p_v in v.items()}\n        else:\n            cpu_opt_dict[k] = v\n\n    state = {\n        'epoch': epoch,\n        'state_dict': cpu_state_dict,\n        'optimizer': cpu_opt_dict,\n        'loss': loss,\n    }\n    \n    full_path = f\"{path}{file_name if file_name else f'after_{epoch}_checkpoint'}.pth\"\n    \n    torch.save(state, full_path)\n    print(f\"✅ Neutral Checkpoint saved to {full_path}\")\n\n\ndef load_checkpoint(model, optimizer, path, device):\n    \"\"\"\n    Loads checkpoint into CPU first to strip headers, then moves to current device.\n    \"\"\"\n    if os.path.exists(path):\n        checkpoint = torch.load(path, map_location=device)\n        \n        load_status = model.load_state_dict(checkpoint['state_dict'], strict=False)\n        \n        if optimizer is not None:\n            optimizer.load_state_dict(checkpoint['optimizer'])\n            for state in optimizer.state.values():\n                for k, v in state.items():\n                    if torch.is_tensor(v):\n                        state[k] = v.to(device)\n        \n        epoch = checkpoint['epoch']\n        loss = checkpoint['loss']\n        \n        print(f\"🔄 Checkpoint loaded. Status: {load_status}\")\n        print(f\"Resuming from Epoch {epoch} | Loss: {loss:.4f}\")\n        return epoch, loss\n    else:\n        print(f\"⚠️ Path not found: {path}\")\n        return 0, float('inf')\n\n\ndef train_and_eval_epoch(epoch, model, train_loader, val_loader, \n                         optimizer, loss_fn, device, log_interval, checkpoint_dir, stage_name: str = \"nat_images\") -> Tuple[float, Optional[float]]:\n    epoch_start_time = time.time()\n\n    model.train()\n    local_train_loss_sum = 0.0\n    local_train_steps = 0\n    for batch_idx, (data, target) in enumerate(train_loader):\n        data, target = data.to(device), target.to(device)\n        optimizer.zero_grad()\n        output = model(data)\n        loss = loss_fn(output, target)\n        loss.backward()\n\n        optimizer.step()\n    \n        local_train_loss_sum += loss.item()\n        local_train_steps += 1\n\n        if batch_idx % log_interval == 0:\n            print(f'Train Epoch: {epoch} '\n                  f'[{batch_idx * len(data)}/{len(train_loader)*128} '\n                  f'({100. * batch_idx / len(train_loader):.0f}%)]\\tLoss: {loss.item():.6f}')\n        only_once = True\n    \n    \n    if local_train_steps > 0:\n        avg_train_loss = local_train_loss_sum / local_train_steps\n    else:\n        avg_train_loss = float('inf')\n\n    print(f'--- Epoch {epoch} Training Metrics ---')\n    print(f'Average Train Loss: {avg_train_loss:.6f}')\n\n \n    model.eval()\n    local_val_loss_sum = 0.0\n    local_val_steps = 0\n    correct = 0\n    total = 0\n\n    with torch.no_grad():\n        for data, target in val_loader:\n            data, target = data.to(device), target.to(device)\n            output = model(data)\n            loss = loss_fn(output, target)\n            \n            local_val_loss_sum += loss.item()\n            local_val_steps += 1\n\n            pred = output.argmax(dim=1, keepdim=True)\n            correct += pred.eq(target.view_as(pred)).sum().item()\n            total += data.size(0)\n\n    \n    if local_val_steps > 0:\n        avg_val_loss = local_val_loss_sum / local_val_steps\n    else:\n        avg_val_loss = float('inf')\n    \n    val_accuracy = 100. * correct / total if total > 0 else 0.0\n    \n    print(f'\\n--- Epoch {epoch} Evaluation ---')\n    print(f'Validation set: Average Loss: {avg_val_loss:.6f}, Accuracy: {val_accuracy:.2f}%\\n')\n\n    if epoch % 10 == 0:\n        file_name = f\"after_{epoch}_{stage_name}\"\n        save_checkpoint(model, optimizer, epoch, avg_train_loss, path=checkpoint_dir, file_name=file_name)\n\n    epoch_finish_time = time.time()\n\n    print(f\"Total time of epoch {epoch} is {epoch_finish_time - epoch_start_time:.2f}s\\n\")\n    return avg_train_loss, avg_val_loss\n\n\ndef plot_learning_curves(train_losses, val_losses, title=\"Model Loss Progression\"):\n    \"\"\"\n    Plots the training and testing loss curves.\n    \n    Args:\n        train_losses (list or numpy array): A list of training loss values per epoch.\n        test_losses (list or numpy array): A list of test/validation loss values per epoch.\n        title (str): The title of the plot.\n    \"\"\"\n    # Create the figure\n    plt.figure(figsize=(10, 6))\n    \n    # Plot the lines\n    # We use a solid line for training and a dashed line for testing for clear contrast\n    plt.plot(train_losses, label='Training Loss', color='blue', linewidth=2, linestyle='-')\n    plt.plot(val_losses, label='Validation Loss', color='orange', linewidth=2, linestyle='--')\n    \n    # Add labels and title\n    plt.title(title, fontsize=16, fontweight='bold')\n    plt.xlabel('Epoch', fontsize=14)\n    plt.ylabel('Loss', fontsize=14)\n    \n    # Add a grid for easier reading of values\n    plt.grid(True, linestyle=':', alpha=0.7)\n    \n    # Add the legend\n    plt.legend(loc='upper right', fontsize=12)\n    \n    # Adjust layout to prevent cutting off labels\n    plt.tight_layout()\n    \n    # Display the plot\n    plt.show()","metadata":{"_uuid":"e0c49299-dd4f-4830-bf48-7c0ef5d774d9","_cell_guid":"420bb59f-c461-40ab-8dcd-c554b2c2935d","trusted":true,"collapsed":false,"jupyter":{"outputs_hidden":false}},"outputs":[],"execution_count":null}]}
+import os
+import time
+import torch
+import matplotlib.pyplot as plt
+
+import torch.nn.functional as F
+from typing import List, Tuple, Optional
+
+os.makedirs("/kaggle/working/", exist_ok=True)
+def save_checkpoint(model, optimizer, epoch, loss, path="/kaggle/working/", file_name=None):
+    """
+    Saves a 'Neutral' checkpoint by manually migrating tensors to CPU.
+    Bypasses torch_xla version issues.
+    """
+    cpu_state_dict = {k: v.to('cpu') for k, v in model.state_dict().items()}
+    
+    cpu_opt_dict = {}
+    for k, v in optimizer.state_dict().items():
+        if k == 'state':
+            cpu_opt_dict[k] = {idx: {p_k: p_v.to('cpu') if torch.is_tensor(p_v) else p_v 
+                                     for p_k, p_v in p_v.items()} 
+                               for idx, p_v in v.items()}
+        else:
+            cpu_opt_dict[k] = v
+
+    state = {
+        'epoch': epoch,
+        'state_dict': cpu_state_dict,
+        'optimizer': cpu_opt_dict,
+        'loss': loss,
+    }
+    
+    full_path = f"{path}{file_name if file_name else f'after_{epoch}_checkpoint'}.pth"
+    
+    torch.save(state, full_path)
+    print(f"✅ Neutral Checkpoint saved to {full_path}")
+
+
+def load_checkpoint(model, optimizer, path, device):
+    """
+    Loads checkpoint into CPU first to strip headers, then moves to current device.
+    """
+    if os.path.exists(path):
+        checkpoint = torch.load(path, map_location=device)
+        
+        load_status = model.load_state_dict(checkpoint['state_dict'], strict=False)
+        
+        if optimizer is not None:
+            optimizer.load_state_dict(checkpoint['optimizer'])
+            for state in optimizer.state.values():
+                for k, v in state.items():
+                    if torch.is_tensor(v):
+                        state[k] = v.to(device)
+        
+        epoch = checkpoint['epoch']
+        loss = checkpoint['loss']
+        
+        print(f"🔄 Checkpoint loaded. Status: {load_status}")
+        print(f"Resuming from Epoch {epoch} | Loss: {loss:.4f}")
+        return epoch, loss
+    else:
+        print(f"⚠️ Path not found: {path}")
+        return 0, float('inf')
+
+
+def train_and_eval_epoch(epoch, model, train_loader, val_loader, 
+                         optimizer, loss_fn, device, log_interval, checkpoint_dir, stage_name: str = "nat_images") -> Tuple[float, Optional[float]]:
+    epoch_start_time = time.time()
+
+    model.train()
+    local_train_loss_sum = 0.0
+    local_train_steps = 0
+    for batch_idx, (data, target) in enumerate(train_loader):
+        data, target = data.to(device), target.to(device)
+        optimizer.zero_grad()
+        output = model(data)
+        loss = loss_fn(output, target)
+        loss.backward()
+
+        optimizer.step()
+    
+        local_train_loss_sum += loss.item()
+        local_train_steps += 1
+
+        if batch_idx % log_interval == 0:
+            print(f'Train Epoch: {epoch} '
+                  f'[{batch_idx * len(data)}/{len(train_loader)*128} '
+                  f'({100. * batch_idx / len(train_loader):.0f}%)]\tLoss: {loss.item():.6f}')
+        only_once = True
+    
+    
+    if local_train_steps > 0:
+        avg_train_loss = local_train_loss_sum / local_train_steps
+    else:
+        avg_train_loss = float('inf')
+
+    print(f'--- Epoch {epoch} Training Metrics ---')
+    print(f'Average Train Loss: {avg_train_loss:.6f}')
+
+ 
+    model.eval()
+    local_val_loss_sum = 0.0
+    local_val_steps = 0
+    correct = 0
+    total = 0
+
+    with torch.no_grad():
+        for data, target in val_loader:
+            data, target = data.to(device), target.to(device)
+            output = model(data)
+            loss = loss_fn(output, target)
+            
+            local_val_loss_sum += loss.item()
+            local_val_steps += 1
+
+            pred = output.argmax(dim=1, keepdim=True)
+            correct += pred.eq(target.view_as(pred)).sum().item()
+            total += data.size(0)
+
+    
+    if local_val_steps > 0:
+        avg_val_loss = local_val_loss_sum / local_val_steps
+    else:
+        avg_val_loss = float('inf')
+    
+    val_accuracy = 100. * correct / total if total > 0 else 0.0
+    
+    print(f'\n--- Epoch {epoch} Evaluation ---')
+    print(f'Validation set: Average Loss: {avg_val_loss:.6f}, Accuracy: {val_accuracy:.2f}%\n')
+
+    if epoch % 10 == 0:
+        file_name = f"after_{epoch}_{stage_name}"
+        save_checkpoint(model, optimizer, epoch, avg_train_loss, path=checkpoint_dir, file_name=file_name)
+
+    epoch_finish_time = time.time()
+
+    print(f"Total time of epoch {epoch} is {epoch_finish_time - epoch_start_time:.2f}s\n")
+    return avg_train_loss, avg_val_loss
+
+
+def plot_learning_curves(train_losses, val_losses, title="Model Loss Progression"):
+    """
+    Plots the training and testing loss curves.
+    
+    Args:
+        train_losses (list or numpy array): A list of training loss values per epoch.
+        test_losses (list or numpy array): A list of test/validation loss values per epoch.
+        title (str): The title of the plot.
+    """
+    # Create the figure
+    plt.figure(figsize=(10, 6))
+    
+    # Plot the lines
+    # We use a solid line for training and a dashed line for testing for clear contrast
+    plt.plot(train_losses, label='Training Loss', color='blue', linewidth=2, linestyle='-')
+    plt.plot(val_losses, label='Validation Loss', color='orange', linewidth=2, linestyle='--')
+    
+    # Add labels and title
+    plt.title(title, fontsize=16, fontweight='bold')
+    plt.xlabel('Epoch', fontsize=14)
+    plt.ylabel('Loss', fontsize=14)
+    
+    # Add a grid for easier reading of values
+    plt.grid(True, linestyle=':', alpha=0.7)
+    
+    # Add the legend
+    plt.legend(loc='upper right', fontsize=12)
+    
+    # Adjust layout to prevent cutting off labels
+    plt.tight_layout()
+    
+    # Display the plot
+    plt.show()
