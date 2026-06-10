@@ -1,3 +1,4 @@
+# %% [code]
 import os
 import time
 import torch
@@ -136,6 +137,85 @@ def train_and_eval_epoch(epoch, model, train_loader, val_loader,
 
     print(f"Total time of epoch {epoch} is {epoch_finish_time - epoch_start_time:.2f}s\n")
     return avg_train_loss, avg_val_loss
+
+
+def train_model_stages(
+    model,
+    train_loader,
+    val_loader,
+    optimizer,
+    loss_fn,
+    device,
+    max_epochs,
+    patience=5,
+    checkpoint_dir="/kaggle/working/",
+    stage_name="nat_images",
+    log_interval=3,
+):
+    print(f"=== Training on the {stage_name} ===")
+
+    best_val_loss = float("inf")
+    patience_counter = 0
+    train_loss_history = []
+    val_loss_history = []
+
+    print(f"Starting training of the {stage_name} in {max_epochs} epochs.")
+    start_time = time.time()
+
+    for epoch in range(1, max_epochs + 1):
+        print(f" {stage_name} training epoch {epoch}/{max_epochs}...")
+
+        train_loss, val_loss = train_and_eval_epoch(
+            epoch=epoch,
+            model=model,
+            train_loader=train_loader,
+            val_loader=val_loader,
+            optimizer=optimizer,
+            loss_fn=loss_fn,
+            device=device,
+            log_interval=log_interval,
+            checkpoint_dir=checkpoint_dir,
+            stage_name=stage_name,
+        )
+
+        train_loss_history.append(train_loss)
+        val_loss_history.append(val_loss)
+
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            patience_counter = 0
+        else:
+            patience_counter += 1
+
+        if patience_counter >= patience:
+            print(f"\n>>> EARLY STOPPING triggered at Epoch {epoch} <<<")
+            print(
+                f">>> Validation loss did not improve for {patience} consecutive epochs. Breaking cycle."
+            )
+            save_checkpoint(
+                model=model,
+                optimizer=optimizer,
+                epoch=epoch,
+                loss=val_loss_history[-1],
+                path=checkpoint_dir,
+                file_name=f"finished_{stage_name}",
+            )
+            break
+
+        if epoch == max_epochs:
+            save_checkpoint(
+                model=model,
+                optimizer=optimizer,
+                epoch=epoch,
+                loss=val_loss_history[-1],
+                path=checkpoint_dir,
+                file_name=f"finished_{stage_name}_max_epochs",
+            )
+
+    print(
+        f"Finished {stage_name} training in {time.time() - start_time:.2f} seconds"
+    )
+    return train_loss_history, val_loss_history
 
 
 def plot_learning_curves(train_losses, val_losses, title="Model Loss Progression"):
