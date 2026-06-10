@@ -12,6 +12,7 @@ venv/
 .ipynb_checkpoints/
 # Data
 data/
+!src/data/
 # PyCharm
 .idea/
 # VSCode
