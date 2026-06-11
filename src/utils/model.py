@@ -1,4 +1,5 @@
 # %% [code]
+# %% [code]
 import math 
 import torch
 
@@ -8,7 +9,7 @@ import torch.nn.init as init
 
 DEVICE = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
 
-class __ConvBN2d(nn.Module):
+class ConvBN2d(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, negative_slope=0.01):
         super().__init__()
 
@@ -43,23 +44,23 @@ class PseudoAlexNet(nn.Module):
         # --- 1. THE VISION BACKBONE (All spatial layers go here) ---
         self.features = nn.Sequential(
             # Layer 1
-            __ConvBN2d(in_channels=3, out_channels=int((1.0/self.tiny_factor)*12), kernel_size=5, stride=2, padding=2, negative_slope=negative_slope),
+            ConvBN2d(in_channels=3, out_channels=int((1.0/self.tiny_factor)*12), kernel_size=5, stride=2, padding=2, negative_slope=negative_slope),
             
             # Layer 2 + Pool
-            __ConvBN2d(in_channels=int((1.0/self.tiny_factor)*12), out_channels=int((1.0/self.tiny_factor)*16), kernel_size=3, stride=1, padding=1, negative_slope=negative_slope),
+            ConvBN2d(in_channels=int((1.0/self.tiny_factor)*12), out_channels=int((1.0/self.tiny_factor)*16), kernel_size=3, stride=1, padding=1, negative_slope=negative_slope),
             nn.MaxPool2d(kernel_size=2, stride=2),
             
             # Layer 3
-            __ConvBN2d(in_channels=int((1.0/self.tiny_factor)*16), out_channels=int((1.0/self.tiny_factor)*24), kernel_size=3, stride=1, padding=1, negative_slope=negative_slope),
+            ConvBN2d(in_channels=int((1.0/self.tiny_factor)*16), out_channels=int((1.0/self.tiny_factor)*24), kernel_size=3, stride=1, padding=1, negative_slope=negative_slope),
             
             # Layer 4 + Pool
-            __ConvBN2d(in_channels=int((1.0/self.tiny_factor)*24), out_channels=int((1.0/self.tiny_factor)*32), kernel_size=3, stride=1, padding=1, negative_slope=negative_slope),
+            ConvBN2d(in_channels=int((1.0/self.tiny_factor)*24), out_channels=int((1.0/self.tiny_factor)*32), kernel_size=3, stride=1, padding=1, negative_slope=negative_slope),
             nn.MaxPool2d(kernel_size=2, stride=2)
         )
 
         # --- 2. THE CLASSIFICATION HEAD (All vector dense layers go here) ---
         self.classifier = nn.Sequential(
-            nn.Dropout(p),nn.Linear(int((1.0/self.tiny_factor)*32) * 37 * 25, 256),
+            nn.Dropout(p),
             nn.Linear(int((1.0/self.tiny_factor)*32) * 37 * 25, 256),
             nn.BatchNorm1d(256),
             nn.LeakyReLU(negative_slope=negative_slope),
