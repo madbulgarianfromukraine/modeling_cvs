@@ -5,8 +5,10 @@ import pandas as pd
 import numpy as np
 
 from torchvision import datasets
+from torchvision.transforms import v2
 from torch.utils.data import Dataset, Subset
 from sklearn.model_selection import train_test_split
+from typing import Tuple
 
 
 def load_dataset(data_augmented=True, transforms_original=None, transforms_augmented_list=None):
@@ -23,13 +25,8 @@ def load_dataset(data_augmented=True, transforms_original=None, transforms_augme
         return original_datasets
         
 
-def stratified_three_way_split(
-    dataset: Dataset, 
-    train_ratio: float, 
-    test_ratio: float, 
-    val_ratio: float, 
-    random_state: int = 42
-):
+def stratified_three_way_split( dataset: Dataset, train_ratio: float, test_ratio: float, 
+    val_ratio: float, random_state: int = 42) -> Tuple[Subset, Subset, Subset]:
     """
     Extracts a stratified train, validation, and test split from a PyTorch Dataset,
     ensuring exact class proportions are maintained across all three.
@@ -85,7 +82,7 @@ def visualize_dataset_distribution(train_ds, val_ds, test_ds, class_names=None):
     """
     Visualizes and compares the class distribution among train, validation, and test sets.
     """
-    def get_labels(dataset):
+    def __get_labels(dataset):
         # Optimized for ImageFolder; falls back to iteration for custom datasets
         if hasattr(dataset, 'targets'):
             return dataset.targets
@@ -97,9 +94,9 @@ def visualize_dataset_distribution(train_ds, val_ds, test_ds, class_names=None):
             return [label for _, label in dataset]
 
     # 1. Extract labels for all three splits
-    train_labels = get_labels(train_ds)
-    val_labels = get_labels(val_ds)
-    test_labels = get_labels(test_ds)
+    train_labels = __get_labels(train_ds)
+    val_labels = __get_labels(val_ds)
+    test_labels = __get_labels(test_ds)
 
     # 2. Create and merge DataFrames for Seaborn
     df_train = pd.DataFrame({'Label': train_labels, 'Split': 'Train'})
