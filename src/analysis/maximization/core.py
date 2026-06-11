@@ -1,5 +1,6 @@
 # %% [code]
 # %% [code]
+# %% [code]
 import os
 import cv2
 import glob
@@ -12,6 +13,7 @@ import torch.nn as nn
 import torchvision.utils as vutils
 from gpu_utils import clean_all_gpu_memory
 from model import PseudoAlexNet
+from fine_tuning import reset_head
 
 class FilterVisualizer:
     def __init__(self, model, layer_num):
@@ -119,7 +121,8 @@ def get_tensor_grid(batch_tensor, nrow=5, padding=2, brightness_offset=0.0):
     return grid_np
 
 
-def visualization_process(vis_queue, vis_finish_event, model_kwargs, layers_to_viz, output_dir, stage_name):
+def visualization_process(vis_queue, vis_finish_event, model_kwargs, layers_to_viz, output_dir, 
+                          stage_name, input_features, output_features):
     os.makedirs(output_dir, exist_ok=True)
     
     device_id = "cuda:1" if torch.cuda.device_count() > 1 else "cuda:0"
@@ -127,6 +130,8 @@ def visualization_process(vis_queue, vis_finish_event, model_kwargs, layers_to_v
     
     # model_constructor should be a function returning your uninitialized model architecture
     model = PseudoAlexNet(**model_kwargs).to(device)
+    reset_head(model, input_features=input_features, output_features=output_features)
+
     model.eval()
 
     while not (vis_finish_event.is_set() and vis_queue.empty()):
