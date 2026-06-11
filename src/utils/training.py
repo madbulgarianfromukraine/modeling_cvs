@@ -1,18 +1,15 @@
 # %% [code]
+# %% [code]
 import os
 import time
 import torch
 import matplotlib.pyplot as plt
-
 import torch.nn.functional as F
 from typing import List, Tuple, Optional
 
 os.makedirs("/kaggle/working/", exist_ok=True)
+
 def save_checkpoint(model, optimizer, epoch, loss, path="/kaggle/working/", file_name=None):
-    """
-    Saves a 'Neutral' checkpoint by manually migrating tensors to CPU.
-    Bypasses torch_xla version issues.
-    """
     cpu_state_dict = {k: v.to('cpu') for k, v in model.state_dict().items()}
     
     cpu_opt_dict = {}
@@ -32,18 +29,13 @@ def save_checkpoint(model, optimizer, epoch, loss, path="/kaggle/working/", file
     }
     
     full_path = f"{path}{file_name if file_name else f'after_{epoch}_checkpoint'}.pth"
-    
     torch.save(state, full_path)
     print(f"✅ Neutral Checkpoint saved to {full_path}")
 
 
 def load_checkpoint(model, optimizer, path, device):
-    """
-    Loads checkpoint into CPU first to strip headers, then moves to current device.
-    """
     if os.path.exists(path):
         checkpoint = torch.load(path, map_location=device)
-        
         load_status = model.load_state_dict(checkpoint['state_dict'], strict=False)
         
         if optimizer is not None:
@@ -77,7 +69,6 @@ def train_and_eval_epoch(epoch, model, train_loader, val_loader,
         output = model(data)
         loss = loss_fn(output, target)
         loss.backward()
-
         optimizer.step()
     
         local_train_loss_sum += loss.item()
@@ -87,8 +78,6 @@ def train_and_eval_epoch(epoch, model, train_loader, val_loader,
             print(f'Train Epoch: {epoch} '
                   f'[{batch_idx * len(data)}/{len(train_loader)*128} '
                   f'({100. * batch_idx / len(train_loader):.0f}%)]\tLoss: {loss.item():.6f}')
-        only_once = True
-    
     
     if local_train_steps > 0:
         avg_train_loss = local_train_loss_sum / local_train_steps
@@ -98,7 +87,6 @@ def train_and_eval_epoch(epoch, model, train_loader, val_loader,
     print(f'--- Epoch {epoch} Training Metrics ---')
     print(f'Average Train Loss: {avg_train_loss:.6f}')
 
- 
     model.eval()
     local_val_loss_sum = 0.0
     local_val_steps = 0
@@ -117,7 +105,6 @@ def train_and_eval_epoch(epoch, model, train_loader, val_loader,
             pred = output.argmax(dim=1, keepdim=True)
             correct += pred.eq(target.view_as(pred)).sum().item()
             total += data.size(0)
-
     
     if local_val_steps > 0:
         avg_val_loss = local_val_loss_sum / local_val_steps
@@ -134,8 +121,8 @@ def train_and_eval_epoch(epoch, model, train_loader, val_loader,
         save_checkpoint(model, optimizer, epoch, avg_train_loss, path=checkpoint_dir, file_name=file_name)
 
     epoch_finish_time = time.time()
-
     print(f"Total time of epoch {epoch} is {epoch_finish_time - epoch_start_time:.2f}s\n")
+    
     return avg_train_loss, avg_val_loss
 
 
@@ -151,6 +138,8 @@ def train_model_stages(
     checkpoint_dir="/kaggle/working/",
     stage_name="nat_images",
     log_interval=3,
+    vis_queue=None,
+    vis_finish_event=None
 ):
     print(f"=== Training on the {stage_name} ===")
 
@@ -181,6 +170,10 @@ def train_model_stages(
         train_loss_history.append(train_loss)
         val_loss_history.append(val_loss)
 
+        if vis_queue is not None:
+            cpu_state = {k: v.to('cpu') for k, v in model.state_dict().items()}
+            vis_queue.put((epoch, cpu_state))
+
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             patience_counter = 0
@@ -189,34 +182,21 @@ def train_model_stages(
 
         if patience_counter >= patience:
             print(f"\n>>> EARLY STOPPING triggered at Epoch {epoch} <<<")
-            print(
-                f">>> Validation loss did not improve for {patience} consecutive epochs. Breaking cycle."
-            )
-            save_checkpoint(
-                model=model,
-                optimizer=optimizer,
-                epoch=epoch,
-                loss=val_loss_history[-1],
-                path=checkpoint_dir,
-                file_name=f"finished_{stage_name}",
-            )
+            print(f">>> Validation loss did not improve for {patience} consecutive epochs. Breaking cycle.")
+            save_checkpoint(model=model, optimizer=optimizer, epoch=epoch, loss=val_loss_history[-1],
+                            path=checkpoint_dir, file_name=f"finished_{stage_name}")
             break
 
         if epoch == max_epochs:
-            save_checkpoint(
-                model=model,
-                optimizer=optimizer,
-                epoch=epoch,
-                loss=val_loss_history[-1],
-                path=checkpoint_dir,
-                file_name=f"finished_{stage_name}_max_epochs",
-            )
+            save_checkpoint(model=model, optimizer=optimizer, epoch=epoch, loss=val_loss_history[-1],
+                            path=checkpoint_dir, file_name=f"finished_{stage_name}_max_epochs")
 
-    print(
-        f"Finished {stage_name} training in {time.time() - start_time:.2f} seconds"
-    )
+    if vis_finish_event is not None:
+        vis_finish_event.set()
+
+    print(f"Finished {stage_name} training in {time.time() - start_time:.2f} seconds")
     return train_loss_history, val_loss_history
-
+    
 
 def plot_learning_curves(train_losses, val_losses, title="Model Loss Progression"):
     """
