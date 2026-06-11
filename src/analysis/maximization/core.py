@@ -1,6 +1,8 @@
 # %% [code]
 # %% [code]
 import os
+import cv2
+import glob
 import queue
 import torch
 import matplotlib.pyplot as plt
@@ -9,6 +11,8 @@ import numpy as np
 import torch.nn as nn
 import torchvision.utils as vutils
 from gpu_utils import clean_all_gpu_memory
+from model import PseudoAlexNet
+
 class FilterVisualizer:
     def __init__(self, model, layer_num):
         self.device = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
@@ -115,14 +119,14 @@ def get_tensor_grid(batch_tensor, nrow=5, padding=2, brightness_offset=0.0):
     return grid_np
 
 
-def visualization_process(vis_queue, vis_finish_event, model_constructor, model_args, layers_to_viz, output_dir, stage_name):
+def visualization_process(vis_queue, vis_finish_event, model_kwargs, layers_to_viz, output_dir, stage_name):
     os.makedirs(output_dir, exist_ok=True)
     
     device_id = "cuda:1" if torch.cuda.device_count() > 1 else "cuda:0"
     device = torch.device(device_id)
     
     # model_constructor should be a function returning your uninitialized model architecture
-    model = model_constructor(*model_args).to(device)
+    model = PseudoAlexNet(**model_kwargs).to(device)
     model.eval()
 
     while not (vis_finish_event.is_set() and vis_queue.empty()):
@@ -147,3 +151,60 @@ def visualization_process(vis_queue, vis_finish_event, model_constructor, model_
             continue
         finally:
             clean_all_gpu_memory()
+
+
+def compile_frames_to_video(frames_dir: str, output_video_path: str, fps: int = 2, file_extension: str = "png"):
+    """
+    Compiles a directory of image frames into an MP4 video.
+    
+    Args:
+        frames_dir (str): Directory containing the saved frame images.
+        output_video_path (str): Desired output path and filename (e.g., 'output.mp4').
+        fps (int): Frames per second. Default is 2.
+        file_extension (str): The image file extension (e.g., 'png', 'jpg').
+    """
+    # 1. Grab all matching images in the directory
+    search_pattern = os.path.join(frames_dir, f"*.{file_extension}")
+    images = glob.glob(search_pattern)
+    
+    if not images:
+        print(f"❌ No {file_extension} images found in {frames_dir}.")
+        return
+
+    # 2. Sort the images alphabetically/numerically 
+    # (Since we used %03d like epoch_001.png, standard sort works perfectly)
+    images.sort()
+    
+    print(f"Found {len(images)} frames. Compiling at {fps} FPS...")
+
+    # 3. Read the first frame to determine the video resolution
+    first_frame = cv2.imread(images[0])
+    if first_frame is None:
+        print(f"❌ Failed to read the first image: {images[0]}")
+        return
+        
+    height, width, layers = first_frame.shape
+    frame_size = (width, height)
+
+    # 4. Initialize the OpenCV Video Writer
+    # 'mp4v' is the standard, widely compatible codec for .mp4 files
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    video_writer = cv2.VideoWriter(output_video_path, fourcc, fps, frame_size)
+
+    # 5. Loop through and write each frame
+    for idx, image_path in enumerate(images):
+        frame = cv2.imread(image_path)
+        
+        # Verify frame loaded and matches dimensions
+        if frame is not None:
+            # OpenCV requires frames to perfectly match the initialized frame_size
+            if (frame.shape[1], frame.shape[0]) != frame_size:
+                frame = cv2.resize(frame, frame_size)
+                
+            video_writer.write(frame)
+        else:
+            print(f"⚠️ Warning: Could not read frame {image_path}. Skipping.")
+
+    # 6. Release the writer to save the file properly
+    video_writer.release()
+    print(f"✅ Video successfully saved to: {output_video_path}")
