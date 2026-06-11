@@ -1,0 +1,191 @@
+import os
+import pandas as pd
+import matplotlib.pyplot as plt
+import math
+import torch
+
+from PIL import Image
+from torch.utils.data import Dataset
+from sklearn.model_selection import train_test_split
+from typing import Optional, Dict, Any, Callable, List, Union, Tuple
+
+class CustomEnricoDataset(Dataset):
+    def __init__(self, 
+                 root: str,
+                 screen_ids: List[str],
+                 labels_dict: Dict[str, str],
+                 class_to_idx: Dict[str, int],
+                 transform: Optional[Callable] = None, 
+                 transform_to_class: Optional[Dict[str, Union[Callable, List[Callable]]]] = None,
+                 augment_for_each: Optional[List[Callable]] = None):
+        """
+        Internal constructor. Use CustomEnricoDataset.create_splits() to initialize 
+        train and val datasets comfortably from a Kaggle path.
+        """
+        self.root = root
+        self.img_dir = os.path.join(self.root, "screenshots/screenshots")
+        self.transform = transform
+        self.transform_to_class = transform_to_class or {}
+        
+        self.screen_ids = screen_ids
+        self.labels_dict = labels_dict
+        self.class_to_idx = class_to_idx
+
+        self.samples = []
+        for screen_id in self.screen_ids:
+            label_str = self.labels_dict.get(screen_id)
+            if label_str:
+                self.samples.append((screen_id, None)) 
+
+                for aug in augment_for_each:
+                    self.samples.append((screen_id, aug))
+                    
+                if label_str in self.transform_to_class:
+                    augs = self.transform_to_class[label_str]
+                    augs = [augs] if not isinstance(augs, list) else augs
+                    for aug in augs:
+                        self.samples.append((screen_id, aug))
+
+    @classmethod
+    def create_splits(cls, 
+                      root: str, 
+                      val_size: float = 0.15, 
+                      test_size: float = 0.15,
+                      seed: int = 42,
+                      transform: Optional[Callable] = None,
+                      transform_to_class: Optional[Dict] = None,
+                      augment_for_each: Optional[List] = None,
+                      allowed_classes : Optional[List[str]] = None) -> Tuple['CustomEnricoDataset', 'CustomEnricoDataset', 'CustomEnricoDataset']:
+        """
+        Reads the Kaggle directory, performs a stratified train/val/test split,
+        and returns all three datasets configured automatically.
+        """
+        from sklearn.model_selection import train_test_split
+        
+        csv_path = os.path.join(root, "design_topics.csv")
+        
+        if not os.path.exists(csv_path):
+            raise FileNotFoundError(f"Could not find {csv_path}. Check your Kaggle input path.")
+
+        df = pd.read_csv(csv_path)
+        df['screen_id'] = df['screen_id'].astype(str)
+
+        # --- NEW: Filter for large/specific classes first ---
+        if allowed_classes is not None:
+            df = df[df['topic'].isin(allowed_classes)].reset_index(drop=True)
+            if len(df) == 0:
+                raise ValueError("Filtered DataFrame is empty! Check your allowed_classes list.")
+                
+        # --- STEP 1: Split Train vs. (Val + Test) ---
+        temp_size = val_size + test_size
+        train_df, temp_df = train_test_split(
+            df, 
+            test_size=temp_size, 
+            stratify=df['topic'], 
+            random_state=seed
+        )
+
+        relative_test_size = test_size / temp_size
+        
+        val_df, test_df = train_test_split(
+            temp_df, 
+            test_size=relative_test_size, 
+            stratify=temp_df['topic'], 
+            random_state=seed
+        )
+
+        # Build shared label mappings
+        labels_dict = dict(zip(df['screen_id'], df['topic']))
+        unique_labels = sorted(df['topic'].unique())
+        class_to_idx = {label: idx for idx, label in enumerate(unique_labels)}
+
+        def _build_dataset(split_df):
+            return cls(
+                root=root,
+                screen_ids=split_df['screen_id'].tolist(),
+                labels_dict=labels_dict,
+                class_to_idx=class_to_idx,
+                transform=transform,
+                transform_to_class=transform_to_class,
+                augment_for_each=augment_for_each
+            )
+
+        return _build_dataset(train_df), _build_dataset(val_df), _build_dataset(test_df)
+
+    def __len__(self):
+        return len(self.samples)
+
+    def __getitem__(self, index):
+        screen_id, specific_transform = self.samples[index]
+        img_path = os.path.join(self.img_dir, f"{screen_id}.jpg") 
+        
+        image = Image.open(img_path)
+        
+        if specific_transform: 
+            image = specific_transform(image)
+            
+        if self.transform: 
+            image = self.transform(image)
+
+        label_idx = self.class_to_idx[self.labels_dict[screen_id]]
+        return image, label_idx
+
+    def get_by_label(self, label: str, num_samples: int = 5):
+        """Utility to retrieve images belonging to a specific label."""
+        results = []
+        for i, (screen_id, aug) in enumerate(self.samples):
+            if self.labels_dict[screen_id] == label:
+                img, _ = self.__getitem__(i)
+
+                img = img.permute(1, 2, 0).detach().cpu().numpy()
+                results.append(img)
+                
+                if len(results) > num_samples:
+                    break
+        return results
+        
+
+def plot_image_list(images, titles=None, cols=4, figsize_multiplier=3):
+    """
+    Plots a list of images in an organized grid.
+    
+    Args:
+        images (list): A list of NumPy arrays representing images (H, W, C).
+        titles (list, optional): A list of strings for the title of each image.
+        cols (int): How many images to display per row.
+        figsize_multiplier (int): Base size for each subplot to scale the overall figure.
+    """
+    num_images = len(images)
+    if num_images == 0:
+        print("The image list is empty.")
+        return
+
+    # Calculate exactly how many rows we need
+    rows = math.ceil(num_images / cols)
+    
+    # Create the figure and subplots
+    fig, axes = plt.subplots(rows, cols, figsize=(cols * figsize_multiplier, rows * figsize_multiplier))
+    
+    if num_images == 1:
+        axes = [axes]
+    else:
+        axes = axes.flatten()
+
+    # Plot each image
+    for i in range(num_images):
+        axes[i].imshow(images[i])
+        
+        # Add title if provided
+        if titles is not None and i < len(titles):
+            axes[i].set_title(titles[i])
+            
+        # Hide the X and Y axes ticks/lines for a cleaner look
+        axes[i].axis('off')
+
+    # Turn off the axes for any remaining empty subplots in the grid
+    for j in range(num_images, len(axes)):
+        axes[j].axis('off')
+
+    # Tidy up the layout and display
+    plt.tight_layout()
+    plt.show()
