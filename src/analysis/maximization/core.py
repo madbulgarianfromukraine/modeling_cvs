@@ -1,9 +1,14 @@
+# %% [code]
+# %% [code]
+import os
+import queue
 import torch
 import matplotlib.pyplot as plt
 import numpy as np
 
 import torch.nn as nn
 import torchvision.utils as vutils
+from gpu_utils import clean_all_gpu_memory
 class FilterVisualizer:
     def __init__(self, model, layer_num):
         self.device = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
@@ -108,3 +113,37 @@ def get_tensor_grid(batch_tensor, nrow=5, padding=2, brightness_offset=0.0):
         grid_np = np.clip(grid_np + brightness_offset, 0.0, 1.0)
         
     return grid_np
+
+
+def visualization_process(vis_queue, vis_finish_event, model_constructor, model_args, layers_to_viz, output_dir, stage_name):
+    os.makedirs(output_dir, exist_ok=True)
+    
+    device_id = "cuda:1" if torch.cuda.device_count() > 1 else "cuda:0"
+    device = torch.device(device_id)
+    
+    # model_constructor should be a function returning your uninitialized model architecture
+    model = model_constructor(*model_args).to(device)
+    model.eval()
+
+    while not (vis_finish_event.is_set() and vis_queue.empty()):
+        try:
+            # timeout allows the loop to periodically check the finish_event if the queue is empty
+            epoch, state_dict = vis_queue.get(timeout=3.0)
+            
+            model.load_state_dict(state_dict)
+            
+            for layer in layers_to_viz:
+                vis = FilterVisualizer(model, layer_num=layer)
+                vis.device = device
+                vis.model.to(device)
+                
+                patterns = vis.visualize(filter_indices=None, iterations=100)
+                grid_output = get_tensor_grid(list(patterns.values()))
+                
+                file_path = os.path.join(output_dir, f"{stage_name}_layer_{layer}_epoch_{epoch:03d}.png")
+                plt.imsave(file_path, grid_output)
+            
+        except queue.Empty:
+            continue
+        finally:
+            clean_all_gpu_memory()
