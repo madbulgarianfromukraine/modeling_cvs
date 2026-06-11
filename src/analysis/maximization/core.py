@@ -3,6 +3,7 @@
 # %% [code]
 import os
 import cv2
+import re
 import glob
 import queue
 import torch
@@ -158,58 +159,80 @@ def visualization_process(vis_queue, vis_finish_event, model_kwargs, layers_to_v
             clean_all_gpu_memory()
 
 
-def compile_frames_to_video(frames_dir: str, output_video_path: str, fps: int = 2, file_extension: str = "png"):
+def compile_layer_videos(frames_dir: str, output_dir: str, fps: int = 2, scale_factor: int = 4):
     """
-    Compiles a directory of image frames into an MP4 video.
+    Automatically groups frames by layer, sorts by epoch, and upscales them 
+    for high-quality video compilation.
     
     Args:
-        frames_dir (str): Directory containing the saved frame images.
-        output_video_path (str): Desired output path and filename (e.g., 'output.mp4').
-        fps (int): Frames per second. Default is 2.
-        file_extension (str): The image file extension (e.g., 'png', 'jpg').
+        frames_dir (str): Directory containing the raw PNG frames.
+        output_dir (str): Where to save the final MP4 videos.
+        fps (int): Speed of the video.
+        scale_factor (int): Multiplier to upscale the video resolution. 
+                            (e.g., 4x turns a 400x300 grid into 1600x1200 HD).
     """
-    # 1. Grab all matching images in the directory
-    search_pattern = os.path.join(frames_dir, f"*.{file_extension}")
-    images = glob.glob(search_pattern)
+    os.makedirs(output_dir, exist_ok=True)
     
-    if not images:
-        print(f"❌ No {file_extension} images found in {frames_dir}.")
+    # Grab all PNG files
+    all_frames = glob.glob(os.path.join(frames_dir, "*.png"))
+    if not all_frames:
+        print(f"❌ No PNG frames found in {frames_dir}.")
         return
 
-    # 2. Sort the images alphabetically/numerically 
-    # (Since we used %03d like epoch_001.png, standard sort works perfectly)
-    images.sort()
-    
-    print(f"Found {len(images)} frames. Compiling at {fps} FPS...")
+    # Regular expressions to parse filenames safely (e.g., "drift_1_layer_3_epoch_005.png")
+    layer_pattern = re.compile(r"layer_(\d+)")
 
-    # 3. Read the first frame to determine the video resolution
-    first_frame = cv2.imread(images[0])
-    if first_frame is None:
-        print(f"❌ Failed to read the first image: {images[0]}")
-        return
+    # 1. Discover all unique layers present in the directory
+    layer_files_map = {}
+    for filepath in all_frames:
+        filename = os.path.basename(filepath)
+        layer_match = layer_pattern.search(filename)
         
-    height, width, layers = first_frame.shape
-    frame_size = (width, height)
+        if layer_match:
+            layer_num = layer_match.group(1)
+            if layer_num not in layer_files_map:
+                layer_files_map[layer_num] = []
+            layer_files_map[layer_num].append(filepath)
 
-    # 4. Initialize the OpenCV Video Writer
-    # 'mp4v' is the standard, widely compatible codec for .mp4 files
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    video_writer = cv2.VideoWriter(output_video_path, fourcc, fps, frame_size)
+    print(f"Found {len(layer_files_map)} distinct layers: {list(layer_files_map.keys())}")
 
-    # 5. Loop through and write each frame
-    for idx, image_path in enumerate(images):
-        frame = cv2.imread(image_path)
+    # 2. Process each layer into its own video
+    for layer_num, filepaths in layer_files_map.items():
+        print(f"\n--- Compiling Video for Layer {layer_num} ---")
         
-        # Verify frame loaded and matches dimensions
-        if frame is not None:
-            # OpenCV requires frames to perfectly match the initialized frame_size
-            if (frame.shape[1], frame.shape[0]) != frame_size:
-                frame = cv2.resize(frame, frame_size)
+        # Read the first frame to establish base dimensions
+        first_frame = cv2.imread(filepaths[0])
+        if first_frame is None:
+            print(f"❌ Failed to read initial frame for layer {layer_num}. Skipping.")
+            continue
+            
+        base_h, base_w, _ = first_frame.shape
+        
+        # Calculate the new HD dimensions
+        target_w = base_w * scale_factor
+        target_h = base_h * scale_factor
+        frame_size = (target_w, target_h)
+        
+        video_filename = f"drift_evolution_layer_{layer_num}.mp4"
+        output_path = os.path.join(output_dir, video_filename)
+        
+        # Initialize video writer
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        video_writer = cv2.VideoWriter(output_path, fourcc, fps, frame_size)
+        
+        print(f"Upscaling from {base_w}x{base_h} to {target_w}x{target_h}...")
+        
+        # Write frames
+        for path in filepaths:
+            frame = cv2.imread(path)
+            if frame is not None:
+                # Upscale the frame. 
+                # Use INTER_CUBIC for smooth gradients.
+                # If you want sharp, blocky pixels, change this to cv2.INTER_NEAREST
+                hd_frame = cv2.resize(frame, frame_size, interpolation=cv2.INTER_CUBIC)
+                video_writer.write(hd_frame)
+            else:
+                print(f"⚠️ Skipping corrupted frame: {path}")
                 
-            video_writer.write(frame)
-        else:
-            print(f"⚠️ Warning: Could not read frame {image_path}. Skipping.")
-
-    # 6. Release the writer to save the file properly
-    video_writer.release()
-    print(f"✅ Video successfully saved to: {output_video_path}")
+        video_writer.release()
+        print(f"✅ Finished! Saved to: {output_path}")
