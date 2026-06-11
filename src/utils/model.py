@@ -1,8 +1,9 @@
+# %% [code]
 import math 
+import torch
+
 import torch.nn as nn
 import torch.nn.functional as F
-import torch.optim as optim
-
 import torch.nn.init as init
 
 DEVICE = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
@@ -58,7 +59,7 @@ class PseudoAlexNet(nn.Module):
 
         # --- 2. THE CLASSIFICATION HEAD (All vector dense layers go here) ---
         self.classifier = nn.Sequential(
-            nn.Dropout(p),nn.Linear(int((1.0/self.tiny_factor)*32) * 37 * 25, 256)
+            nn.Dropout(p),nn.Linear(int((1.0/self.tiny_factor)*32) * 37 * 25, 256),
             nn.Linear(int((1.0/self.tiny_factor)*32) * 37 * 25, 256),
             nn.BatchNorm1d(256),
             nn.LeakyReLU(negative_slope=negative_slope),
