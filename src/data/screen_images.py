@@ -1,3 +1,4 @@
+# %% [code]
 import os
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -15,6 +16,7 @@ class CustomEnricoDataset(Dataset):
                  screen_ids: List[str],
                  labels_dict: Dict[str, str],
                  class_to_idx: Dict[str, int],
+                 use_wireframes: bool = False,
                  transform: Optional[Callable] = None, 
                  transform_to_class: Optional[Dict[str, Union[Callable, List[Callable]]]] = None,
                  augment_for_each: Optional[List[Callable]] = None):
@@ -23,7 +25,10 @@ class CustomEnricoDataset(Dataset):
         train and val datasets comfortably from a Kaggle path.
         """
         self.root = root
-        self.img_dir = os.path.join(self.root, "screenshots/screenshots")
+        if use_wireframes:
+            self.img_dir = os.path.join(self.root, "wireframes/wireframes")
+        else:
+            self.img_dir = os.path.join(self.root, "screenshots/screenshots")
         self.transform = transform
         self.transform_to_class = transform_to_class or {}
         
@@ -52,6 +57,7 @@ class CustomEnricoDataset(Dataset):
                       val_size: float = 0.15, 
                       test_size: float = 0.15,
                       seed: int = 42,
+                      use_wireframes: bool = False,
                       transform: Optional[Callable] = None,
                       transform_to_class: Optional[Dict] = None,
                       augment_for_each: Optional[List] = None,
@@ -75,7 +81,7 @@ class CustomEnricoDataset(Dataset):
             df = df[df['topic'].isin(allowed_classes)].reset_index(drop=True)
             if len(df) == 0:
                 raise ValueError("Filtered DataFrame is empty! Check your allowed_classes list.")
-                
+        
         # --- STEP 1: Split Train vs. (Val + Test) ---
         temp_size = val_size + test_size
         train_df, temp_df = train_test_split(
@@ -105,6 +111,7 @@ class CustomEnricoDataset(Dataset):
                 screen_ids=split_df['screen_id'].tolist(),
                 labels_dict=labels_dict,
                 class_to_idx=class_to_idx,
+                use_wireframes=use_wireframes,
                 transform=transform,
                 transform_to_class=transform_to_class,
                 augment_for_each=augment_for_each
