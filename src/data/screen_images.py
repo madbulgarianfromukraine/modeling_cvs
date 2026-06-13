@@ -1,4 +1,5 @@
 # %% [code]
+# %% [code]
 import os
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -25,9 +26,12 @@ class CustomEnricoDataset(Dataset):
         train and val datasets comfortably from a Kaggle path.
         """
         self.root = root
+        
         if use_wireframes:
+            self.file_ext = "png"
             self.img_dir = os.path.join(self.root, "wireframes/wireframes")
         else:
+            self.file_ext = "jpg"
             self.img_dir = os.path.join(self.root, "screenshots/screenshots")
         self.transform = transform
         self.transform_to_class = transform_to_class or {}
@@ -124,7 +128,7 @@ class CustomEnricoDataset(Dataset):
 
     def __getitem__(self, index):
         screen_id, specific_transform = self.samples[index]
-        img_path = os.path.join(self.img_dir, f"{screen_id}.jpg") 
+        img_path = os.path.join(self.img_dir, f"{screen_id}.{self.file_ext}") 
         
         image = Image.open(img_path)
         
