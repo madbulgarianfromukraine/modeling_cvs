@@ -126,12 +126,34 @@ class CustomEnricoDataset(Dataset):
 
     def __len__(self):
         return len(self.samples)
+        
+    @staticmethod
+    def safe_rgba_to_rgb(image_path: str, bg_color=(255, 255, 255)) -> Image.Image:
+        img = Image.open(image_path)
+        
+        # If it's already RGB or L, just return it converted to RGB
+        if img.mode in ('RGB', 'L'):
+            return img.convert('RGB')
+            
+        # If it has an alpha channel (RGBA or LA)
+        if img.mode in ('RGBA', 'LA') or (img.mode == 'P' and 'transparency' in img.info):
+            img = img.convert('RGBA')
+            
+            # Create a solid background image
+            background = Image.new("RGB", img.size, bg_color)
+            
+            # Paste the image using its own alpha channel as the mask
+            background.paste(img, mask=img.split()[3])
+            return background
 
+        # Fallback for any other exotic modes
+        return img.convert('RGB')
+        
     def __getitem__(self, index):
         screen_id, specific_transform = self.samples[index]
         img_path = os.path.join(self.img_dir, f"{screen_id}.{self.file_ext}") 
         
-        image = Image.open(img_path).convert("RGB")
+        image = CustomEnricoDataset.safe_rgba_to_rgb(image_path=img_path)
         
         if specific_transform: 
             image = specific_transform(image)
@@ -156,6 +178,7 @@ class CustomEnricoDataset(Dataset):
                     break
         return results
         
+
 
 def plot_image_list(images, titles=None, cols=4, figsize_multiplier=3):
     """
