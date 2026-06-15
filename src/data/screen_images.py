@@ -1,5 +1,6 @@
 # %% [code]
 # %% [code]
+# %% [code]
 import os
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -130,7 +131,7 @@ class CustomEnricoDataset(Dataset):
         screen_id, specific_transform = self.samples[index]
         img_path = os.path.join(self.img_dir, f"{screen_id}.{self.file_ext}") 
         
-        image = Image.open(img_path).convert("RGB")
+        image = Image.open(img_path)
         
         if specific_transform: 
             image = specific_transform(image)
