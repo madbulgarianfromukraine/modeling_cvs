@@ -91,7 +91,7 @@ def analyze_all_pairs_drift(nat_patterns, ft_patterns, scr_patterns, layer_name=
     
     return all_results
 
-#analyzint the absolute difference masks
+#analyze the absolute difference masks
 def plot_difference_grid_pairwise(patterns_a, patterns_b, title_suffix, nrow=8, padding=4):
     common_indices = sorted(list(set(patterns_a.keys()).intersection(set(patterns_b.keys()))))
     
@@ -108,8 +108,11 @@ def plot_difference_grid_pairwise(patterns_a, patterns_b, title_suffix, nrow=8, 
                 align_corners=False
             ).squeeze(0)
             
-        diff_rgb = torch.abs(tensor_a - tensor_b)
-        diff_gray = 0.2989 * diff_rgb[0] + 0.5870 * diff_rgb[1] + 0.1140 * diff_rgb[2]
+        # Convert both tensors to grayscale first to isolate luminance structure
+        gray_a = 0.2989 * tensor_a[0] + 0.5870 * tensor_a[1] + 0.1140 * tensor_a[2]
+        gray_b = 0.2989 * tensor_b[0] + 0.5870 * tensor_b[1] + 0.1140 * tensor_b[2]
+        
+        diff_gray = torch.abs(gray_a - gray_b)
         diff_tensors.append(diff_gray.unsqueeze(0))
         
     batch_tensor = torch.stack(diff_tensors, dim=0)
@@ -119,9 +122,9 @@ def plot_difference_grid_pairwise(patterns_a, patterns_b, title_suffix, nrow=8, 
     plt.figure(figsize=(14, 10), dpi=200)
     im = plt.imshow(grid_np, cmap='hot', vmin=0.0, vmax=0.5)
     
-    plt.title(f"Absolute Difference Masks - {title_suffix.upper()}", fontsize=12, fontweight='bold', pad=15)
+    plt.title(f"Absolute Structural Difference Masks - {title_suffix.upper()}", fontsize=12, fontweight='bold', pad=15)
     plt.axis('off')
-    plt.colorbar(im, shrink=0.6, label='Magnitude of Representation Change')
+    plt.colorbar(im, shrink=0.6, label='Magnitude of Structural Representation Change')
     plt.tight_layout()
     plt.show()
 
