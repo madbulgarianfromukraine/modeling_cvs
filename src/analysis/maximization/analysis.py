@@ -1,3 +1,4 @@
+# %% [code]
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
@@ -184,9 +185,9 @@ def compute_anisotropy_index(magnitude_spectrum, dc_radius=5):
     theta = np.degrees(np.arctan2(cy - Y, X - cx)) % 180
     R = np.sqrt((X - cx)**2 + (Y - cy)**2)
     
-    # Boundary definitions using a +/- 15 degree tracking window tolerance
-    mask_cardinal = ((theta < 5) | (theta > 175) | ((theta > 85) & (theta < 95)))
-    mask_oblique = (((theta > 20) & (theta < 70)) | ((theta > 110) & (theta < 160)))
+    # Boundary definitions using a +/- 10 degree tracking window tolerance
+    mask_cardinal = ((theta < 10) | (theta > 170) | ((theta > 80) & (theta < 100)))
+    mask_oblique = (((theta > 35) & (theta < 55)) | ((theta > 125) & (theta < 145)))
     
     # Exclude the massive DC center-pixel spike
     mask_dc = R > dc_radius
