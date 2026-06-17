@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
 import numpy as np
+import random
 
 from torchvision import datasets
 from torchvision.transforms import v2
@@ -127,3 +128,19 @@ def visualize_dataset_distribution(train_ds, val_ds, test_ds, class_names=None):
     print(f"Total Validation Samples: {len(val_labels)} ({len(val_labels) / total_samples * 100:.1f}%)")
     print(f"Total test Samples:       {len(test_labels)} ({len(test_labels) / total_samples * 100:.1f}%)")
     print(f"Total Combined Samples:   {total_samples}")
+
+
+class StochasticCutMixDataLoader:
+    def __init__(self, dataloader, num_classes=101, p=0.5):
+        self.dataloader = dataloader
+        self.cutmix = v2.CutMix(num_classes=num_classes)
+        self.p = p
+
+    def __iter__(self):
+        for images, labels in self.dataloader:
+            if random.random() < self.p:
+                images, labels = self.cutmix(images, labels)
+            yield images, labels
+
+    def __len__(self):
+        return len(self.dataloader)
