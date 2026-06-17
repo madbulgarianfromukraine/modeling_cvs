@@ -41,7 +41,11 @@ def plot_cka_matrix(cka_obj, title_suffix=""):
     plt.tight_layout()
     plt.show()
 
-def plot_all_cka_pairs(cka_bf, cka_bs, cka_fs):
+def plot_all_cka_pairs(cka_bf, cka_bs, cka_fs, cka_nb=None, cka_uc=None):
     plot_cka_matrix(cka_bf, title_suffix="Baseline vs Fine-Tuned")
     plot_cka_matrix(cka_bs, title_suffix="Baseline vs Scratch")
     plot_cka_matrix(cka_fs, title_suffix="Fine-Tuned vs Scratch")
+    if cka_nb is not None:
+        plot_cka_matrix(cka_nb, title_suffix="Noise Baseline")
+    if cka_uc is not None:
+        plot_cka_matrix(cka_uc, title_suffix="Untrained Control of natural images")
