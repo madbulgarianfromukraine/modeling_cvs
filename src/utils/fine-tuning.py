@@ -1,3 +1,4 @@
+# %% [code]
 import torch
 import torch.nn as nn
 
@@ -11,7 +12,7 @@ def initial_freeze_unfreeze(model):
 
 
 def second_unfreeze(model):
-    for feature_arg in model.features[1:]:
+    for feature_arg in model.features:
         for param in feature_arg.parameters():
             param.requires_grad = True
 
