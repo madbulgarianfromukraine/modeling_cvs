@@ -141,9 +141,7 @@ class StochasticCutMixDataLoader:
         for images, labels in self.dataloader:
             if random.random() < self.p:
                 images, labels = self.cutmix(images, labels)
-            else:
-                # Convert standard integer labels to soft one-hot distributions
-                labels = F.one_hot(labels, num_classes=self.num_classes).float()
+                labels = labels.argmax(dim=1)
                 
             yield images, labels
 
