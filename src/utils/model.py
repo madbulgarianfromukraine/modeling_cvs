@@ -1,5 +1,6 @@
 # %% [code]
 # %% [code]
+# %% [code]
 import math 
 import torch
 
@@ -27,7 +28,7 @@ class ConvBN2d(nn.Module):
         
         if self.conv.bias is not None:
             init.zeros_(self.conv.bias)
-            
+
         init.ones_(self.bn.weight)
         init.zeros_(self.bn.bias)
 
