@@ -1,5 +1,6 @@
 # %% [code]
 # %% [code]
+# %% [code]
 import os
 import time
 import torch
@@ -57,10 +58,15 @@ def load_checkpoint(model, optimizer, path, device):
 
 
 def train_and_eval_epoch(epoch, model, train_loader, val_loader, 
-                         optimizer, loss_fn, device, log_interval, checkpoint_dir, stage_name: str = "nat_images") -> Tuple[float, Optional[float]]:
+                         optimizer, loss_fn, device, log_interval, 
+                         checkpoint_dir, stage_name: str = "nat_images", bn_eval: bool = False) -> Tuple[float, Optional[float]]:
     epoch_start_time = time.time()
 
     model.train()
+    if bn_eval:
+        for module in model.modules():
+            if isinstance(module, torch.nn.BatchNorm2d) or isinstance(module, torch.nn.BatchNorm1d):
+                module.eval()
     local_train_loss_sum = 0.0
     local_train_steps = 0
     for batch_idx, (data, target) in enumerate(train_loader):
