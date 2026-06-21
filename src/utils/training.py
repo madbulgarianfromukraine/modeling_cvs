@@ -4,6 +4,8 @@
 import os
 import time
 import torch
+import numpy as np
+
 import matplotlib.pyplot as plt
 import torch.nn.functional as F
 from typing import List, Tuple, Optional
@@ -239,3 +241,21 @@ def plot_learning_curves(train_losses, val_losses, title="Model Loss Progression
     
     # Display the plot
     plt.show()
+    
+    
+def mean_and_std_for_normalization(dataloader: torch.utils.data.DataLoader) -> Tuple[np.array, np.array]:
+    # code from https://stackoverflow.com/questions/53735817/normalising-images-before-learning-in-pytorch access time at 21.06.2026 of 23:07
+    data_mean = [] # Mean of the dataset
+    data_std1 = [] # std with ddof = 1
+    for i, data in enumerate(dataloader, 0):
+        # shape (batch_size, 3, height, width)
+        numpy_image = data['image'].numpy()
+    
+        # shape (3,)
+        batch_mean = np.mean(numpy_image, axis=(0,2,3))
+        batch_std1 = np.std(numpy_image, axis=(0,2,3), ddof=1)
+    
+        data_mean.append(batch_mean)
+        data_std1.append(batch_std1)
+
+    return np.array(data_mean).mean(axis=0), np.array(data_std1).mean(axis=0)
