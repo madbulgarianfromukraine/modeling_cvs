@@ -247,9 +247,9 @@ def mean_and_std_for_normalization(dataloader: torch.utils.data.DataLoader) -> T
     # code from https://stackoverflow.com/questions/53735817/normalising-images-before-learning-in-pytorch access time at 21.06.2026 of 23:07
     data_mean = [] # Mean of the dataset
     data_std1 = [] # std with ddof = 1
-    for i, data in enumerate(dataloader, 0):
+    for _, (data,_) in enumerate(dataloader, 0):
         # shape (batch_size, 3, height, width)
-        numpy_image = data['image'].numpy()
+        numpy_image = data.numpy()
     
         # shape (3,)
         batch_mean = np.mean(numpy_image, axis=(0,2,3))
