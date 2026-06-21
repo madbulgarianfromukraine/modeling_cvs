@@ -145,7 +145,8 @@ def train_model_stages(
     stage_name="nat_images",
     log_interval=3,
     vis_queue=None,
-    vis_finish_event=None
+    vis_finish_event=None,
+    bn_eval: bool = False
 ):
     print(f"=== Training on the {stage_name} ===")
 
@@ -171,6 +172,7 @@ def train_model_stages(
             log_interval=log_interval,
             checkpoint_dir=checkpoint_dir,
             stage_name=stage_name,
+            bn_eval=bn_eval
         )
 
         train_loss_history.append(train_loss)
