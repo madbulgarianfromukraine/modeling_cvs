@@ -210,7 +210,7 @@ def train_model_stages(
     return train_loss_history, val_loss_history
     
 
-def plot_learning_curves(train_losses, val_losses, title="Model Loss Progression"):
+def plot_learning_curves(train_losses, val_losses, title="Model Loss Progression", log_scale: bool = False):
     """
     Plots the training and testing loss curves.
     
@@ -221,7 +221,9 @@ def plot_learning_curves(train_losses, val_losses, title="Model Loss Progression
     """
     # Create the figure
     plt.figure(figsize=(10, 6))
-    
+
+    if log_scale:
+        plt.yscale('log')
     # Plot the lines
     # We use a solid line for training and a dashed line for testing for clear contrast
     plt.plot(train_losses, label='Training Loss', color='blue', linewidth=2, linestyle='-')
