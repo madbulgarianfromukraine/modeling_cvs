@@ -1,9 +1,11 @@
+# %% [code]
 import torch
 import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
 import numpy as np
 import random
+import os
 
 from torchvision import datasets
 import torch.nn.functional as F
@@ -12,14 +14,14 @@ from torch.utils.data import Dataset, Subset
 from sklearn.model_selection import train_test_split
 from typing import Tuple
 
-
-def load_dataset(data_augmented=True, transforms_original=None, transforms_augmented_list=None):
+#Caltech 101 functions
+def load_dataset(transforms_original=None, transforms_augmented_list=None):
     original_dataset = datasets.Caltech101(root='./data', download=True, transform=transforms_original)
-    if data_augmented:
+    if len(transforms_augmented_list):
     
         augmented_datasets = [
             datasets.Caltech101(root='./data', download=True, transform=
-                                v2.Compose([t,transforms_original]))
+                                v2.Compose([transforms_original, t]))
             for t in transforms_augmented_list
         ]
         return torch.utils.data.ConcatDataset([original_dataset] + augmented_datasets)
@@ -27,7 +29,7 @@ def load_dataset(data_augmented=True, transforms_original=None, transforms_augme
         return original_datasets
         
 
-def stratified_three_way_split( dataset: Dataset, train_ratio: float, test_ratio: float, 
+def stratified_three_way_split(dataset: Dataset, train_ratio: float, test_ratio: float, 
     val_ratio: float, random_state: int = 42) -> Tuple[Subset, Subset, Subset]:
     """
     Extracts a stratified train, validation, and test split from a PyTorch Dataset,
@@ -80,7 +82,37 @@ def stratified_three_way_split( dataset: Dataset, train_ratio: float, test_ratio
     return Subset(dataset, train_indices), Subset(dataset, val_indices), Subset(dataset, test_indices)
     
 
-def visualize_dataset_distribution(train_ds, val_ds, test_ds, class_names=None):
+def __is_valid_file(file_path: str) -> bool:
+    if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+        return True
+    else:
+        return False
+#ImageNet functions
+def load_imagenet_100(transforms_original=None, transforms_augmented_list=None) -> Tuple[datasets.ImageFolder, datasets.ImageFolder]:
+    IMAGENET_100_ROOT_PATH = "/kaggle/input/datasets/ambityga/imagenet100"
+
+    # code adapted from https://www.kaggle.com/code/goduguanilhimam/resnet-34-lmagenet100-21-8m?scriptVersionId=261568289&cellId=7 
+    train_datasets = []
+    val_dataset = None
+    for parent_node in IMAGENET_100_ROOT_PATH.iterdir():
+
+        # Avoiding the Label File
+        if not parent_node.is_dir():
+            continue
+    
+        # Retrieving the Split Name
+        split_name = parent_node.stem.split(".")[0]
+    
+        # Executing the Copy based on the Split Name
+        if split_name == "train" :
+            train_datasets.append(datasets.ImageFolder(root=f'{IMAGENET_100_ROOT_PATH}/{parent_node}', transform=transforms_original, is_valid_file=__is_valid_file))
+        elif split_name == "val":
+            val_dataset = datasets.ImageFolder(root=f'{IMAGENET_100_ROOT_PATH}/{parent_node}', transform=transforms_original, is_valid_file=__is_valid_file)
+
+    return torch.utils.data.ConcatDataset(train_datasets), val_dataset
+            
+    
+def visualize_dataset_distribution(train_ds, val_ds=[], test_ds=[], class_names=None):
     """
     Visualizes and compares the class distribution among train, validation, and test sets.
     """
