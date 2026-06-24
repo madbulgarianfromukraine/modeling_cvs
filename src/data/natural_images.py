@@ -18,8 +18,7 @@ from typing import Tuple
 #Caltech 101 functions
 def load_dataset(transforms_original=None, transforms_augmented_list=None):
     original_dataset = datasets.Caltech101(root='./data', download=True, transform=transforms_original)
-    if len(transforms_augmented_list):
-    
+    if transforms_augmented_list is not None and len(transforms_augmented_list) > 0:
         augmented_datasets = [
             datasets.Caltech101(root='./data', download=True, transform=
                                 v2.Compose([transforms_original, t]))
@@ -27,7 +26,7 @@ def load_dataset(transforms_original=None, transforms_augmented_list=None):
         ]
         return torch.utils.data.ConcatDataset([original_dataset] + augmented_datasets)
     else:
-        return original_datasets
+        return original_dataset
         
 
 def stratified_three_way_split(dataset: Dataset, train_ratio: float, test_ratio: float, 
@@ -106,10 +105,19 @@ def load_imagenet_100(transforms_original=None, transforms_augmented_list=None) 
     
         # Executing the Copy based on the Split Name
         if split_name == "train" :
-            train_datasets.append(datasets.ImageFolder(root=f'{IMAGENET_100_ROOT_PATH}/{parent_node}', transform=transforms_original, is_valid_file=__is_valid_file))
+            #original dataset
+            train_datasets.append(datasets.ImageFolder(root=f'{IMAGENET_100_ROOT_PATH}/{parent_node}', transform=v2.Compose([transforms_original,t]), is_valid_file=__is_valid_file))
+            # augmented transforms
+            if transforms_augmented_list is not None and len(transforms_augmented_list) > 0:
+                train_datasets.extend(
+                    [
+                    datasets.ImageFolder(root=f'{IMAGENET_100_ROOT_PATH}/{parent_node}', transform=v2.Compose([transforms_original,t]), is_valid_file=__is_valid_file)
+                    for t in transforms_augmented_list
+                    ]
+                )
         elif split_name == "val":
             val_dataset = datasets.ImageFolder(root=f'{IMAGENET_100_ROOT_PATH}/{parent_node}', transform=transforms_original, is_valid_file=__is_valid_file)
-
+    
     return torch.utils.data.ConcatDataset(train_datasets), val_dataset
             
     
