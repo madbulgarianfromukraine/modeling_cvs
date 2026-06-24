@@ -107,12 +107,12 @@ def load_imagenet_100(transforms_original=None, transforms_augmented_list=None) 
         # Executing the Copy based on the Split Name
         if split_name == "train" :
             #original dataset
-            train_datasets.append(datasets.ImageFolder(root=f'{IMAGENET_100_ROOT_PATH}/{parent_node}', transform=transforms_original, is_valid_file=__is_valid_file))
+            train_datasets.append(datasets.ImageFolder(root=parent_node, transform=transforms_original, is_valid_file=__is_valid_file))
             # augmented transforms
             if transforms_augmented_list is not None and len(transforms_augmented_list) > 0:
                 train_datasets.extend(
                     [
-                    datasets.ImageFolder(root=f'{IMAGENET_100_ROOT_PATH}/{parent_node}', transform=v2.Compose([transforms_original,t]), is_valid_file=__is_valid_file)
+                    datasets.ImageFolder(root=parent_node, transform=v2.Compose([transforms_original,t]), is_valid_file=__is_valid_file)
                     for t in transforms_augmented_list
                     ]
                 )
