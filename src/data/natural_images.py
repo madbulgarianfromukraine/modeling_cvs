@@ -1,12 +1,13 @@
 # %% [code]
 # %% [code]
+# %% [code]
 import torch
 import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
 import numpy as np
 import random
-import os
+import pathlib
 
 from torchvision import datasets
 import torch.nn.functional as F
@@ -94,7 +95,7 @@ def load_imagenet_100(transforms_original=None, transforms_augmented_list=None) 
     # code adapted from https://www.kaggle.com/code/goduguanilhimam/resnet-34-lmagenet100-21-8m?scriptVersionId=261568289&cellId=7 
     train_datasets = []
     val_dataset = None
-    for parent_node in IMAGENET_100_ROOT_PATH.iterdir():
+    for parent_node in pathlib.Path(IMAGENET_100_ROOT_PATH).iterdir():
 
         # Avoiding the Label File
         if not parent_node.is_dir():
