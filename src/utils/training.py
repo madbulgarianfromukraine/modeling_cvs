@@ -4,6 +4,7 @@
 # %% [code]
 # %% [code]
 # %% [code]
+# %% [code]
 import os
 import time
 import torch
@@ -283,5 +284,7 @@ def seed_everything(seed=42):
 
 def seed_worker(worker_id):
     worker_seed = torch.initial_seed() % 2**32
+    torch.manual_seed(worker_seed)
+    torch.cuda.manual_seed(worker_seed)
     np.random.seed(worker_seed)
     random.seed(worker_seed)
