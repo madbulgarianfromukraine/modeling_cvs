@@ -7,6 +7,7 @@ import os
 import time
 import torch
 import numpy as np
+import random
 
 import matplotlib.pyplot as plt
 import torch.nn.functional as F
@@ -263,3 +264,23 @@ def mean_and_std_for_normalization(dataloader: torch.utils.data.DataLoader) -> T
         data_std1.append(batch_std1)
 
     return np.array(data_mean).mean(axis=0), np.array(data_std1).mean(axis=0)
+
+def seed_everything(seed=42):
+    # 1. Standard Python and OS replication
+    random.seed(seed)
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    np.random.seed(seed)
+    
+    # 2. PyTorch CPU and CUDA global seeds
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed) # For multi-GPU setups
+    
+    # 3. CuDNN back-end determinism (Crucial for CNNs)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+def seed_worker(worker_id):
+    worker_seed = torch.initial_seed() % 2**32
+    np.random.seed(worker_seed)
+    random.seed(worker_seed)
