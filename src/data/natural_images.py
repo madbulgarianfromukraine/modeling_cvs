@@ -174,19 +174,18 @@ def visualize_dataset_distribution(train_ds, val_ds=[], test_ds=[], class_names=
     print(f"Total Combined Samples:   {total_samples}")
 
 
-class StochasticCutMixDataLoader:
-    def __init__(self, dataloader, num_classes=101, p=0.5):
-        self.dataloader = dataloader
+class CutMixCollate:
+    def __init__(self, num_classes, cutmix_prob=0.5):
         self.cutmix = v2.CutMix(num_classes=num_classes)
-        self.p = p
+        self.cutmix_prob = cutmix_prob
 
-    def __iter__(self):
-        for images, labels in self.dataloader:
-            if random.random() < self.p:
-                images, labels = self.cutmix(images, labels)
-                labels = labels.argmax(dim=1)
-                
-            yield images, labels
-
-    def __len__(self):
-        return len(self.dataloader)
+    def __call__(self, batch):
+        # 1. Run the default PyTorch stacking logic first
+        from torch.utils.data.dataloader import default_collate
+        images, labels = default_collate(batch)
+        
+        # 2. Apply batch-level stochastic logic safely within the worker thread
+        if torch.rand(1).item() < self.cutmix_prob:
+            images, labels = self.cutmix(images, labels)
+            
+        return images, labels
