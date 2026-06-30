@@ -87,4 +87,4 @@ class PseudoAlexNet(nn.Module):
         # 3. Pass through the classification brain
         x = self.classifier(x)
         
-        return F.log_softmax(x, dim=1)
+        return x
