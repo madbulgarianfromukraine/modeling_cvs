@@ -7,6 +7,7 @@
 # %% [code]
 # %% [code]
 # %% [code]
+# %% [code]
 import os
 import time
 import torch
@@ -85,7 +86,7 @@ def train_and_eval_epoch(epoch, model, train_loader, val_loader,
         data, target = data.to(device), target.to(device)
 
         if augmenter:
-            datav  = augmenter(data)
+            data = augmenter(data)
             
         optimizer.zero_grad()
         output = model(data)
