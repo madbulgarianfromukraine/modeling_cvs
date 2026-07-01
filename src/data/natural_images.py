@@ -76,7 +76,7 @@ def stratified_three_way_split(dataset: Dataset, train_ratio: float, test_ratio:
     elif hasattr(dataset, 'y'):
         targets = dataset.y
     else:
-        targets = [dataset[i][1] for i in range(len(dataset))]
+        targets = [dataset[0][i][1] for i in range(len(dataset[0]))]
 
     # 2. Format targets and cast to a NumPy array to allow easy advanced indexing later
     if torch.is_tensor(targets):
