@@ -10,6 +10,7 @@ import time
 import torch
 import numpy as np
 import random
+import pandas as pd
 
 import matplotlib.pyplot as plt
 import torch.nn.functional as F
@@ -213,40 +214,36 @@ def train_model_stages(
     return train_loss_history, val_loss_history
     
 
-def plot_learning_curves(train_losses, val_losses, title="Model Loss Progression", log_scale: bool = False):
-    """
-    Plots the training and testing loss curves.
-    
-    Args:
-        train_losses (list or numpy array): A list of training loss values per epoch.
-        test_losses (list or numpy array): A list of test/validation loss values per epoch.
-        title (str): The title of the plot.
-    """
-    # Create the figure
+def plot_learning_curves(train_losses, val_losses, title="Model Loss Progression", log_scale: bool = False, save_to_csv: bool = False, stage: str = None):
+    if save_to_csv:
+        if not stage:
+            raise ValueError("The 'stage' parameter is required when 'save_to_csv' is True.")
+        
+        df = pd.DataFrame({
+            'Epoch': range(len(train_losses)),
+            'Training Loss': train_losses,
+            'Validation Loss': val_losses
+        })
+        
+        #os.makedirs('/kaggle/working', exist_ok=True)
+        csv_path = f'/kaggle/working/{stage}_loss.csv'
+        df.to_csv(csv_path, index=False)
+
     plt.figure(figsize=(10, 6))
 
     if log_scale:
         plt.yscale('log')
-    # Plot the lines
-    # We use a solid line for training and a dashed line for testing for clear contrast
+        
     plt.plot(train_losses, label='Training Loss', color='blue', linewidth=2, linestyle='-')
     plt.plot(val_losses, label='Validation Loss', color='orange', linewidth=2, linestyle='--')
     
-    # Add labels and title
     plt.title(title, fontsize=16, fontweight='bold')
     plt.xlabel('Epoch', fontsize=14)
     plt.ylabel('Loss', fontsize=14)
     
-    # Add a grid for easier reading of values
     plt.grid(True, linestyle=':', alpha=0.7)
-    
-    # Add the legend
     plt.legend(loc='upper right', fontsize=12)
-    
-    # Adjust layout to prevent cutting off labels
     plt.tight_layout()
-    
-    # Display the plot
     plt.show()
     
     
