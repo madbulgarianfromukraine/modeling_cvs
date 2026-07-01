@@ -1,4 +1,5 @@
 # %% [code]
+# %% [code]
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -49,3 +50,27 @@ def plot_all_cka_pairs(cka_bf, cka_bs, cka_fs, cka_nb=None, cka_uc=None):
         plot_cka_matrix(cka_nb, title_suffix="Noise Baseline")
     if cka_uc is not None:
         plot_cka_matrix(cka_uc, title_suffix="Untrained Control of natural images")
+
+
+def plot_layer_weight_diagnostic(models, model_names, layer_num, layer_name, threshold=0.001):
+    colors = ['blue', 'orange', 'green']
+    num_models = len(models)
+    
+    fig, axs = plt.subplots(1, num_models, figsize=(15, 4), sharey=True, dpi=150)
+    
+    if num_models == 1:
+        axs = [axs]
+        
+    for i, (model, name) in enumerate(zip(models, model_names)):
+        weights = model.features[layer_num].conv.weight.detach().cpu().numpy().flatten()
+        sparsity = np.mean(np.abs(weights) < threshold) * 100
+        
+        axs[i].hist(weights, bins=100, color=colors[i % len(colors)], alpha=0.7)
+        axs[i].set_title(f"{name}\nSparsity (<{threshold}): {sparsity:.2f}%", fontsize=10)
+        axs[i].set_xlabel("Weight Value")
+        if i == 0:
+            axs[i].set_ylabel("Count")
+            
+    plt.suptitle(f"Weight Sparsity Diagnostic - {layer_name.upper()}", fontsize=12, fontweight='bold', y=1.02)
+    plt.tight_layout()
+    plt.show()
