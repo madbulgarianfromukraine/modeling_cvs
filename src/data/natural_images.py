@@ -1,6 +1,7 @@
 # %% [code]
 # %% [code]
 # %% [code]
+# %% [code]
 import torch
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -18,17 +19,44 @@ from sklearn.model_selection import train_test_split
 from typing import Tuple
 
 #Caltech 101 functions
+class AugmentationWrapper(torch.utils.data.Dataset):
+    def __init__(self, base_dataset, transform=None):
+        self.base_dataset = base_dataset
+        self.transform = transform
+
+    def __len__(self):
+        return len(self.base_dataset)
+
+    def __getitem__(self, idx):
+        # 1. Fetch original image and label
+        img, label = self.base_dataset[idx]
+        
+        if hasattr(img, 'convert'):
+            img = img.convert('RGB')
+            
+        if self.transform:
+            img, label = self.transform(img, label)
+            
+        return img, label
+
 def load_dataset(transforms_original=None, transforms_augmented_list=None):
-    original_dataset = datasets.Caltech101(root='./data', download=True, transform=transforms_original)
-    if transforms_augmented_list is not None and len(transforms_augmented_list) > 0:
-        augmented_datasets = [
-            datasets.Caltech101(root='./data', download=True, transform=
-                                v2.Compose([transforms_original, t]))
-            for t in transforms_augmented_list
-        ]
-        return torch.utils.data.ConcatDataset([original_dataset] + augmented_datasets)
-    else:
-        return original_dataset
+    # Load the core dataset once (Apache 2.0 / MIT compatible logic)
+    # We remove the 'transform' arg here and move it to our wrapper
+    base_data = datasets.Caltech101(root='./data', download=True)
+    
+    dataset_branches = []
+    
+    # Branch 1: The Original/Clean data
+    dataset_branches.append(AugmentationWrapper(base_data, transforms_original))
+    
+    # Branches 2+: Augmented versions
+    if transforms_augmented_list:
+        for aug_t in transforms_augmented_list:
+            # Combine original pipeline with the specific augmentation
+            combined_t = v2.Compose([transforms_original, aug_t])
+            dataset_branches.append(AugmentationWrapper(base_data, combined_t))
+    
+    return ConcatDataset(dataset_branches)
         
 
 def stratified_three_way_split(dataset: Dataset, train_ratio: float, test_ratio: float, 
