@@ -5,6 +5,8 @@
 # %% [code]
 # %% [code]
 # %% [code]
+# %% [code]
+# %% [code]
 import os
 import time
 import torch
@@ -14,6 +16,7 @@ import pandas as pd
 
 import matplotlib.pyplot as plt
 import torch.nn.functional as F
+import torch.nn as nn
 from typing import List, Tuple, Optional
 
 os.makedirs("/kaggle/working/", exist_ok=True)
@@ -67,7 +70,8 @@ def load_checkpoint(model, optimizer, path, device):
 
 def train_and_eval_epoch(epoch, model, train_loader, val_loader, 
                          optimizer, loss_fn, device, log_interval, 
-                         checkpoint_dir, stage_name: str = "nat_images", bn_eval: bool = False) -> Tuple[float, Optional[float]]:
+                         checkpoint_dir, stage_name: str = "nat_images", bn_eval: bool = False, 
+                         augmenter: Optional[nn.Module] = None) -> Tuple[float, Optional[float]]:
     epoch_start_time = time.time()
 
     model.train()
@@ -79,6 +83,10 @@ def train_and_eval_epoch(epoch, model, train_loader, val_loader,
     local_train_steps = 0
     for batch_idx, (data, target) in enumerate(train_loader):
         data, target = data.to(device), target.to(device)
+
+        if augmenter:
+            datav  = augmenter(data)
+            
         optimizer.zero_grad()
         output = model(data)
         loss = loss_fn(output, target)
@@ -154,7 +162,8 @@ def train_model_stages(
     log_interval=3,
     vis_queue=None,
     vis_finish_event=None,
-    bn_eval: bool = False
+    bn_eval: bool = False,
+    augmenter: Optional[nn.Module] = None
 ):
     print(f"=== Training on the {stage_name} ===")
 
@@ -180,7 +189,8 @@ def train_model_stages(
             log_interval=log_interval,
             checkpoint_dir=checkpoint_dir,
             stage_name=stage_name,
-            bn_eval=bn_eval
+            bn_eval=bn_eval,
+            augmenter=augmenter
         )
 
         train_loss_history.append(train_loss)
