@@ -8,6 +8,7 @@
 # %% [code]
 # %% [code]
 # %% [code]
+# %% [code]
 import os
 import time
 import torch
@@ -88,11 +89,14 @@ def train_and_eval_epoch(epoch, model, train_loader, val_loader,
         if augmenter:
             data = augmenter(data)
             
-        optimizer.zero_grad()
-        output = model(data)
-        loss = loss_fn(output, target)
-        loss.backward()
-        optimizer.step()
+        def __closure():
+            optimizer.zero_grad()
+            output = model(data)
+            loss = loss_fn(output, target)
+            loss.backward()
+            return loss
+            
+        loss = optimizer.step(__closure)
     
         local_train_loss_sum += loss.item()
         local_train_steps += 1
