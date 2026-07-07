@@ -13,6 +13,14 @@ from torch.utils.data import Dataset
 from sklearn.model_selection import train_test_split
 from typing import Optional, Dict, Any, Callable, List, Union, Tuple
 
+
+def make_screen_base_transform(resize: Tuple[int, int] = (300, 200)):
+    return v2.Compose([
+        v2.Resize(size=resize),
+        v2.ToImage(),
+        v2.ToDtype(torch.float32, scale=True),
+    ])
+
 class CustomEnricoDataset(Dataset):
     def __init__(self, 
                  root: str,
