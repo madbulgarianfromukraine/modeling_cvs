@@ -47,7 +47,7 @@ class CustomEnricoDataset(Dataset):
             if label_str:
                 self.samples.append((screen_id, None)) 
 
-                for aug in augment_for_each:
+                for aug in augment_for_each or []:
                     self.samples.append((screen_id, aug))
                     
                 if label_str in self.transform_to_class:
@@ -64,6 +64,8 @@ class CustomEnricoDataset(Dataset):
                       seed: int = 42,
                       use_wireframes: bool = False,
                       transform: Optional[Callable] = None,
+                      train_transform: Optional[Callable] = None,
+                      eval_transform: Optional[Callable] = None,
                       transform_to_class: Optional[Dict] = None,
                       augment_for_each: Optional[List] = None,
                       allowed_classes : Optional[List[str]] = None) -> Tuple['CustomEnricoDataset', 'CustomEnricoDataset', 'CustomEnricoDataset']:
@@ -110,19 +112,26 @@ class CustomEnricoDataset(Dataset):
         unique_labels = sorted(df['topic'].unique())
         class_to_idx = {label: idx for idx, label in enumerate(unique_labels)}
 
-        def _build_dataset(split_df):
+        train_transform = train_transform if train_transform is not None else transform
+        eval_transform = eval_transform if eval_transform is not None else transform
+
+        def _build_dataset(split_df, split_transform, split_augment_for_each=None, split_transform_to_class=None):
             return cls(
                 root=root,
                 screen_ids=split_df['screen_id'].tolist(),
                 labels_dict=labels_dict,
                 class_to_idx=class_to_idx,
                 use_wireframes=use_wireframes,
-                transform=transform,
-                transform_to_class=transform_to_class,
-                augment_for_each=augment_for_each
+                transform=split_transform,
+                transform_to_class=split_transform_to_class,
+                augment_for_each=split_augment_for_each
             )
 
-        return _build_dataset(train_df), _build_dataset(val_df), _build_dataset(test_df)
+        return (
+            _build_dataset(train_df, train_transform, augment_for_each, transform_to_class),
+            _build_dataset(val_df, eval_transform, None, None),
+            _build_dataset(test_df, eval_transform, None, None),
+        )
 
     def __len__(self):
         return len(self.samples)

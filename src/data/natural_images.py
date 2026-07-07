@@ -36,9 +36,49 @@ class AugmentationWrapper(torch.utils.data.Dataset):
             img = img.convert('RGB')
             
         if self.transform:
-            img, label = self.transform(img, label)
+            img = self.transform(img)
             
         return img, label
+
+
+def make_caltech_base_transform(resize: Tuple[int, int] = (300, 200)):
+    return v2.Compose([
+        v2.Resize(resize),
+        v2.RGB(),
+        v2.ToImage(),
+        v2.ToDtype(torch.float32, scale=True),
+    ])
+
+
+def build_caltech_split_datasets(
+    train_subset: Dataset,
+    val_subset: Dataset,
+    test_subset: Dataset,
+    mean,
+    std,
+    transforms_augmented_list=None,
+    resize: Tuple[int, int] = (300, 200),
+):
+    base_transform = make_caltech_base_transform(resize=resize)
+    normalize = v2.Normalize(mean=list(mean), std=list(std))
+    eval_transform = v2.Compose([base_transform, normalize])
+
+    train_branches = [AugmentationWrapper(train_subset, eval_transform)]
+
+    if transforms_augmented_list:
+        for aug_t in transforms_augmented_list:
+            train_branches.append(
+                AugmentationWrapper(
+                    train_subset,
+                    v2.Compose([base_transform, aug_t, normalize]),
+                )
+            )
+
+    return (
+        ConcatDataset(train_branches),
+        AugmentationWrapper(val_subset, eval_transform),
+        AugmentationWrapper(test_subset, eval_transform),
+    )
 
 def load_dataset(transforms_original=None, transforms_augmented_list=None):
     # Load the core dataset once (Apache 2.0 / MIT compatible logic)
