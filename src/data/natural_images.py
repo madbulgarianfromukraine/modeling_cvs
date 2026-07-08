@@ -19,6 +19,7 @@ from torchvision.transforms import v2
 from torch.utils.data import Dataset, Subset, ConcatDataset
 from sklearn.model_selection import train_test_split
 from typing import Tuple
+from dataset_utils import get_labels
 
 #Caltech 101 functions
 class AugmentationWrapper(torch.utils.data.Dataset):
@@ -111,14 +112,7 @@ def stratified_three_way_split(dataset: Dataset, train_ratio: float, test_ratio:
     assert np.isclose(train_ratio + val_ratio + test_ratio, 1.0), "Ratios must sum to 1.0!"
 
     # 1. Safely extract targets regardless of dataset structure
-    if hasattr(dataset, 'targets'):
-        targets = dataset.targets
-    elif hasattr(dataset, 'labels'):
-        targets = dataset.labels
-    elif hasattr(dataset, 'y'):
-        targets = dataset.y
-    else:
-        targets = [dataset[i][1] for i in range(len(dataset))]
+    targets = get_labels(dataset)
 
     # 2. Format targets and cast to a NumPy array to allow easy advanced indexing later
     if torch.is_tensor(targets):
@@ -197,21 +191,10 @@ def visualize_dataset_distribution(train_ds, val_ds=[], test_ds=[], class_names=
     """
     Visualizes and compares the class distribution among train, validation, and test sets.
     """
-    def __get_labels(dataset):
-        # Optimized for ImageFolder; falls back to iteration for custom datasets
-        if hasattr(dataset, 'targets'):
-            return dataset.targets
-        elif hasattr(dataset, 'labels'):
-            return dataset.labels
-        elif hasattr(dataset, 'y'):
-            return dataset.y
-        else:
-            return [label for _, label in dataset]
-
     # 1. Extract labels for all three splits
-    train_labels = __get_labels(train_ds)
-    val_labels = __get_labels(val_ds)
-    test_labels = __get_labels(test_ds)
+    train_labels = get_labels(train_ds)
+    val_labels = get_labels(val_ds)
+    test_labels = get_labels(test_ds)
 
     # 2. Create and merge DataFrames for Seaborn
     df_train = pd.DataFrame({'Label': train_labels, 'Split': 'Train'})

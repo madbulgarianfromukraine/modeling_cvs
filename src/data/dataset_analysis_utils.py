@@ -15,24 +15,12 @@ from umap import UMAP
 
 from natural_images import AugmentationWrapper
 from screen_images import plot_image_list
+from dataset_utils import get_labels
 
 
 def extract_labels(dataset):
-    if isinstance(dataset, Subset):
-        parent_labels = extract_labels(dataset.dataset)
-        return np.asarray(parent_labels)[dataset.indices]
-    if isinstance(dataset, ConcatDataset):
-        return np.concatenate([extract_labels(child) for child in dataset.datasets])
-    if hasattr(dataset, 'targets'):
-        labels = dataset.targets
-        return labels.cpu().numpy() if torch.is_tensor(labels) else np.asarray(labels)
-    if hasattr(dataset, 'labels'):
-        labels = dataset.labels
-        return labels.cpu().numpy() if torch.is_tensor(labels) else np.asarray(labels)
-    if hasattr(dataset, 'y'):
-        labels = dataset.y
-        return labels.cpu().numpy() if torch.is_tensor(labels) else np.asarray(labels)
-    return np.asarray([dataset[index][1] for index in range(len(dataset))])
+    labels = get_labels(dataset)
+    return labels.cpu().numpy() if torch.is_tensor(labels) else np.asarray(labels)
 
 
 def class_count_frame(dataset, class_names):
