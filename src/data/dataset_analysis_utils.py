@@ -46,6 +46,13 @@ def class_count_frame(dataset, class_names):
     })
 
 
+def numbered_table(frame, start=1, index_name='rank'):
+    numbered = frame.reset_index(drop=True).copy()
+    numbered.index = np.arange(start, start + len(numbered))
+    numbered.index.name = index_name
+    return numbered
+
+
 def split_summary_frame(train_ds, val_ds, test_ds):
     splits = [('train', train_ds), ('val', val_ds), ('test', test_ds)]
     total = sum(len(ds) for _, ds in splits)
