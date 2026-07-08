@@ -21,6 +21,9 @@ CATEGORIES = {'settings', 'calculator', 'other', 'terms', 'search', 'form', 'tut
 EXCLUDE_SMALL = {'calculator', 'camera', 'maps', 'chat', 'editor'}
 EXCLUDE_HIGH_OVERLAP = set()
 
+def get_allowed_classes():
+    return CATEGORIES - EXCLUDE_SMALL - EXCLUDE_HIGH_OVERLAP
+
 def make_screen_base_transform(resize: Tuple[int, int] = (300, 200)):
     return v2.Compose([
         v2.Resize(size=resize),
@@ -102,7 +105,7 @@ class CustomEnricoDataset(Dataset):
         # --- NEW: Filter for large/specific classes first ---
         if allowed_classes:
             if isinstance(allowed_classes, bool):
-                allowed_classes = CATEGORIES - EXCLUDE_SMALL - EXCLUDE_HIGH_OVERLAP
+                allowed_classes = get_allowed_classes()
             df = df[df['topic'].isin(allowed_classes)].reset_index(drop=True)
             if len(df) == 0:
                 raise ValueError("Filtered DataFrame is empty! Check your allowed_classes list.")
