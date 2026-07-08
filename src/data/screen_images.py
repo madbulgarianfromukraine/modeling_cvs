@@ -4,6 +4,7 @@
 # %% [code]
 # %% [code]
 # %% [code]
+# %% [code]
 import os
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -18,7 +19,7 @@ from typing import Optional, Dict, Any, Callable, List, Union, Tuple
 
 CATEGORIES = {'settings', 'calculator', 'other', 'terms', 'search', 'form', 'tutorial', 'gallery', 'mediaplayer', 'list', 'bare', 'chat', 'editor', 'modal', 'news', 'login', 'profile', 'camera', 'menu', 'maps'}
 EXCLUDE_SMALL = {'calculator', 'camera', 'maps', 'chat', 'editor'}
-EXCLUDE_HIGH_OVERLAP = {}
+EXCLUDE_HIGH_OVERLAP = set()
 
 def make_screen_base_transform(resize: Tuple[int, int] = (300, 200)):
     return v2.Compose([
