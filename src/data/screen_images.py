@@ -11,6 +11,7 @@ import torch
 
 from PIL import Image
 from torch.utils.data import Dataset
+from torchvision.transforms import v2
 from sklearn.model_selection import train_test_split
 from typing import Optional, Dict, Any, Callable, List, Union, Tuple
 
