@@ -3,6 +3,7 @@
 # %% [code]
 # %% [code]
 # %% [code]
+# %% [code]
 import os
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -15,6 +16,9 @@ from torchvision.transforms import v2
 from sklearn.model_selection import train_test_split
 from typing import Optional, Dict, Any, Callable, List, Union, Tuple
 
+CATEGORIES = {'settings', 'calculator', 'other', 'terms', 'search', 'form', 'tutorial', 'gallery', 'mediaplayer', 'list', 'bare', 'chat', 'editor', 'modal', 'news', 'login', 'profile', 'camera', 'menu', 'maps'}
+EXCLUDE_SMALL = {'calculator', 'camera', 'maps', 'chat', 'editor'}
+EXCLUDE_HIGH_OVERLAP = {}
 
 def make_screen_base_transform(resize: Tuple[int, int] = (300, 200)):
     return v2.Compose([
@@ -79,7 +83,7 @@ class CustomEnricoDataset(Dataset):
                       eval_transform: Optional[Callable] = None,
                       transform_to_class: Optional[Dict] = None,
                       augment_for_each: Optional[List] = None,
-                      allowed_classes : Optional[List[str]] = None) -> Tuple['CustomEnricoDataset', 'CustomEnricoDataset', 'CustomEnricoDataset']:
+                      allowed_classes : Optional[Union[List[str], bool]] = True) -> Tuple['CustomEnricoDataset', 'CustomEnricoDataset', 'CustomEnricoDataset']:
         """
         Reads the Kaggle directory, performs a stratified train/val/test split,
         and returns all three datasets configured automatically.
@@ -95,10 +99,13 @@ class CustomEnricoDataset(Dataset):
         df['screen_id'] = df['screen_id'].astype(str)
 
         # --- NEW: Filter for large/specific classes first ---
-        if allowed_classes is not None:
+        if allowed_classes:
+            if isinstance(allowed_classes, bool):
+                allowed_classes = CATEGORIES - EXCLUDE_SMALL - EXCLUDE_HIGH_OVERLAP
             df = df[df['topic'].isin(allowed_classes)].reset_index(drop=True)
             if len(df) == 0:
                 raise ValueError("Filtered DataFrame is empty! Check your allowed_classes list.")
+    
         
         # --- STEP 1: Split Train vs. (Val + Test) ---
         temp_size = val_size + test_size
