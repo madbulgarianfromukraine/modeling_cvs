@@ -19,7 +19,7 @@ from typing import Optional, Dict, Any, Callable, List, Union, Tuple
 
 CATEGORIES = {'settings', 'calculator', 'other', 'terms', 'search', 'form', 'tutorial', 'gallery', 'mediaplayer', 'list', 'bare', 'chat', 'editor', 'modal', 'news', 'login', 'profile', 'camera', 'menu', 'maps'}
 EXCLUDE_SMALL = {'calculator', 'camera', 'maps', 'chat', 'editor'}
-EXCLUDE_HIGH_OVERLAP = set()
+EXCLUDE_HIGH_OVERLAP = {"editor", "gallery", "mediaplayer", "modal", "news", "profile"}
 
 def get_allowed_classes():
     return CATEGORIES - EXCLUDE_SMALL - EXCLUDE_HIGH_OVERLAP
