@@ -1,14 +1,3 @@
-# %% [code]
-# %% [code]
-# %% [code]
-# %% [code]
-# %% [code]
-# %% [code]
-# %% [code]
-# %% [code]
-# %% [code]
-# %% [code]
-# %% [code]
 import os
 import time
 import torch
@@ -177,6 +166,8 @@ def train_model_stages(
     train_loss_history = []
     val_loss_history = []
 
+    best_model_state = None
+
     print(f"Starting training of the {stage_name} in {max_epochs} epochs.")
     start_time = time.time()
 
@@ -205,22 +196,44 @@ def train_model_stages(
             cpu_state = {k: v.to('cpu') for k, v in model.state_dict().items()}
             vis_queue.put((epoch, cpu_state))
 
+        # Check if validation loss has improved
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             patience_counter = 0
+            # Clone and move tensors to CPU to avoid potential GPU memory leaks
+            best_model_state = {k: v.clone().to('cpu') for k, v in model.state_dict().items()}
+            print(f" New best validation loss achieved: {best_val_loss:.6f}. Saving weights internally.")
         else:
             patience_counter += 1
 
+        # Check early stopping condition
         if patience_counter >= patience:
             print(f"\n>>> EARLY STOPPING triggered at Epoch {epoch} <<<")
             print(f">>> Validation loss did not improve for {patience} consecutive epochs. Breaking cycle.")
-            save_checkpoint(model=model, optimizer=optimizer, epoch=epoch, loss=val_loss_history[-1],
+            
+            # Load the best weights back into the model before final save
+            if best_model_state is not None:
+                print("🔄 Restoring best weights (lowest validation loss) to model before checkpoint creation...")
+                model.load_state_dict({k: v.to(device) for k, v in best_model_state.items()})
+                
+            save_checkpoint(model=model, optimizer=optimizer, epoch=epoch, loss=best_val_loss,
                             path=checkpoint_dir, file_name=f"finished_{stage_name}")
             break
 
+        # Check maximum epoch condition
         if epoch == max_epochs:
-            save_checkpoint(model=model, optimizer=optimizer, epoch=epoch, loss=val_loss_history[-1],
+            # Load the best weights back into the model before final save
+            if best_model_state is not None:
+                print("🔄 Restoring best weights (lowest validation loss) to model before checkpoint creation...")
+                model.load_state_dict({k: v.to(device) for k, v in best_model_state.items()})
+                
+            save_checkpoint(model=model, optimizer=optimizer, epoch=epoch, loss=best_val_loss,
                             path=checkpoint_dir, file_name=f"finished_{stage_name}_max_epochs")
+
+    # Ensure best weights are loaded back into the model at the end of training
+    if best_model_state is not None:
+        print("🔄 Finalizing training. Restoring best weights into active model.")
+        model.load_state_dict({k: v.to(device) for k, v in best_model_state.items()})
 
     if vis_finish_event is not None:
         vis_finish_event.set()
@@ -240,7 +253,6 @@ def plot_learning_curves(train_losses, val_losses, title="Model Loss Progression
             'Validation Loss': val_losses
         })
         
-        #os.makedirs('/kaggle/working', exist_ok=True)
         csv_path = f'/kaggle/working/{stage}_loss.csv'
         df.to_csv(csv_path, index=False)
 
@@ -263,14 +275,11 @@ def plot_learning_curves(train_losses, val_losses, title="Model Loss Progression
     
     
 def mean_and_std_for_normalization(dataloader: torch.utils.data.DataLoader) -> Tuple[np.array, np.array]:
-    # code from https://stackoverflow.com/questions/53735817/normalising-images-before-learning-in-pytorch access time at 21.06.2026 of 23:07
-    data_mean = [] # Mean of the dataset
-    data_std1 = [] # std with ddof = 1
+    data_mean = [] 
+    data_std1 = [] 
     for _, (data,_) in enumerate(dataloader, 0):
-        # shape (batch_size, 3, height, width)
         numpy_image = data.numpy()
     
-        # shape (3,)
         batch_mean = np.mean(numpy_image, axis=(0,2,3))
         batch_std1 = np.std(numpy_image, axis=(0,2,3), ddof=1)
     
@@ -280,17 +289,14 @@ def mean_and_std_for_normalization(dataloader: torch.utils.data.DataLoader) -> T
     return np.array(data_mean).mean(axis=0), np.array(data_std1).mean(axis=0)
 
 def seed_everything(seed=42):
-    # 1. Standard Python and OS replication
     random.seed(seed)
     os.environ['PYTHONHASHSEED'] = str(seed)
     np.random.seed(seed)
     
-    # 2. PyTorch CPU and CUDA global seeds
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed) # For multi-GPU setups
+    torch.cuda.manual_seed_all(seed) 
     
-    # 3. CuDNN back-end determinism (Crucial for CNNs)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
