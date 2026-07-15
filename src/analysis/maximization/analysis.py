@@ -6,6 +6,8 @@ import matplotlib.pyplot as plt
 from skimage.metrics import structural_similarity as ssim
 import torch.nn.functional as F
 import torchvision.utils as vutils
+import scipy.ndimage
+from concurrent.futures import ThreadPoolExecutor
 
 
 # analyzing SIMM, mse, mae
@@ -151,57 +153,103 @@ def compare_all_domain_states(nat_patterns, ft_patterns, scr_patterns, layer_nam
     )
 
 #  Fourier analysis
-def compute_fourier_spectrum(image_data):
-    """Computes centered 2D log-magnitude Fourier spectrum from PyTorch Tensors or Numpy arrays."""
-    # Convert PyTorch tensor to numpy if necessary
+def _step1_preprocess(image_data):
+    """Step 1: Convert image to grayscale."""
     if torch.is_tensor(image_data):
         image_data = image_data.detach().cpu().numpy()
         
-    # Handle batch or channel dims: squeeze out batch or mean-collapse RGB channels to grayscale
     if image_data.ndim == 3:
         if image_data.shape[0] == 3:  # CHW format
-            image_gray = np.mean(image_data, axis=0)
+            # Use standard perceptual luminance weighting (ITU-R 601-2)
+            return 0.2989 * image_data[0] + 0.5870 * image_data[1] + 0.1140 * image_data[2]
         else:                         # HWC format
-            image_gray = np.mean(image_data, axis=2)
-    else:
-        image_gray = image_data
+            return 0.2989 * image_data[:, :, 0] + 0.5870 * image_data[:, :, 1] + 0.1140 * image_data[:, :, 2]
+    return image_data
 
-    # 2D Fast Fourier Transform and shift DC component to center
-    f_transform = np.fft.ifftshift(image_gray)
+def _step2_fft_and_sample(masked_image, angle, mask_x_dc, mask_y_dc):
+    """Step 2: Rotate the pre-masked image, compute FFT, and sample Cardinal axes."""
+    # Rotate the already masked image
+    rotated = scipy.ndimage.rotate(masked_image, angle, reshape=False, order=3, mode='constant', cval=0.0)
+    
+    # 2D FFT
+    f_transform = np.fft.ifftshift(rotated)
     f_transform = np.fft.fft2(f_transform)
     f_shift = np.fft.fftshift(f_transform)
-    
     magnitude = np.abs(f_shift)
-    log_magnitude = np.log(1 + magnitude)
-    return magnitude, log_magnitude
+    
+    # Sample amplitudes using the pre-calculated DC masks
+    amp_horiz = np.sum(magnitude[mask_y_dc])
+    amp_vert = np.sum(magnitude[mask_x_dc])
+    
+    return angle, amp_horiz, amp_vert, np.log(1 + magnitude)
 
-def compute_anisotropy_index(magnitude_spectrum, dc_radius=5):
-    """
-    Calculates the ratio of Cardinal (0, 90 deg) to Oblique (45, 135 deg) energy.
-    Matches Duggan & Gerhardstein (2023) structural statistics workflow.
-    """
-    h, w = magnitude_spectrum.shape
+def _step3_rotational_sampling(image_gray, dc_radius, max_workers):
+    """Step 3: Precompute masks, iteratively rotate the image, and sample amplitudes."""
+    contour_amplitudes = {}
+    angles = list(range(0, 90, 3))
+    
+    # PRECOMPUTE all spatial and frequency masks ONCE (reshape=False means dimensions are constant)
+    h, w = image_gray.shape
     cy, cx = h // 2, w // 2
+    Y, X = np.ogrid[:h, :w]
     
-    Y, X = np.indices((h, w))
-    # Calculate angular distribution across the polar map (0 to 180 degrees)
-    theta = np.degrees(np.arctan2(cy - Y, X - cx)) % 180
-    R = np.sqrt((X - cx)**2 + (Y - cy)**2)
+    # Circular crop mask (spatial domain)
+    radius = min(h, w) / 2.0
+    dist_from_center = np.sqrt((X - cx)**2 + (Y - cy)**2)
+    circular_mask = dist_from_center <= radius
+    masked_image = image_gray * circular_mask
     
-    # Boundary definitions using a +/- 10 degree tracking window tolerance
-    mask_cardinal = ((theta < 10) | (theta > 170) | ((theta > 80) & (theta < 100)))
-    mask_oblique = (((theta > 35) & (theta < 55)) | ((theta > 125) & (theta < 145)))
+    # Frequency sampling masks (exclude DC component)
+    mask_y_dc = (X == cx) & (dist_from_center > dc_radius)
+    mask_x_dc = (Y == cy) & (dist_from_center > dc_radius)
     
-    # Exclude the massive DC center-pixel spike
-    mask_dc = R > dc_radius
-    
-    cardinal_energy = np.sum(magnitude_spectrum[mask_cardinal & mask_dc])
-    oblique_energy = np.sum(magnitude_spectrum[mask_oblique & mask_dc])
-    
-    if oblique_energy == 0:
-        return 0
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = [executor.submit(_step2_fft_and_sample, masked_image, a, mask_x_dc, mask_y_dc) for a in angles]
+        results = [f.result() for f in futures]
         
-    return cardinal_energy / oblique_energy
+    base_log_mag = None
+    for angle, amp_horiz, amp_vert, log_mag in results:
+        contour_amplitudes[angle] = amp_horiz
+        contour_amplitudes[angle + 90] = amp_vert
+        if angle == 0:
+            base_log_mag = log_mag
+            
+    return contour_amplitudes, base_log_mag
+
+def _step4_average_orientations(contour_amplitudes):
+    """Step 4: Average sampled amplitudes across specific angular windows."""
+    def get_avg_for_window(target_angles):
+        vals = []
+        for a, amp in contour_amplitudes.items():
+            for t in target_angles:
+                dist = min(abs(a - t), 180 - abs(a - t))
+                if dist <= 21:
+                    vals.append(amp)
+        return np.mean(vals) if vals else 0.0
+
+    horiz_avg = get_avg_for_window([0, 180])
+    vert_avg = get_avg_for_window([90])
+    oblique_avg = get_avg_for_window([45]) # ignore 135
+    return horiz_avg, vert_avg, oblique_avg
+
+def _step5_normalize_index(oblique_avg, contour_amplitudes):
+    """Step 5: Normalize the oblique average by the global maximum amplitude."""
+    max_amp = max(contour_amplitudes.values()) if contour_amplitudes else 1.0
+    if max_amp == 0:
+        max_amp = 1.0
+    return oblique_avg / max_amp
+
+def compute_rotational_anisotropy(image_data, dc_radius=5, max_workers=10):
+    """
+    Computes anisotropy index using iterative rotational sampling.
+    Matches Duggan & Gerhardstein (2023) methodology.
+    """
+    image_gray = _step1_preprocess(image_data)
+    contour_amplitudes, base_log_mag = _step3_rotational_sampling(image_gray, dc_radius, max_workers)
+    horiz_avg, vert_avg, oblique_avg = _step4_average_orientations(contour_amplitudes)
+    anisotropy_index = _step5_normalize_index(oblique_avg, contour_amplitudes)
+    
+    return base_log_mag, anisotropy_index
 
 def analyze_layer_filters(filter_images):
     """Averages spectral transformations across all channels in a given target layer."""
@@ -209,16 +257,16 @@ def analyze_layer_filters(filter_images):
         return np.zeros((300, 200)), 0.0 # Fallback placeholder matrix if lists are empty
 
     # Inspect first image to determine target resolution dimensions
-    _, sample_log = compute_fourier_spectrum(filter_images[0])
+    sample_log, _ = compute_rotational_anisotropy(filter_images[0])
     h, w = sample_log.shape
     
     avg_log_spectrum = np.zeros((h, w), dtype=np.float64)
     anisotropy_scores = []
     
     for img in filter_images:
-        mag, log_mag = compute_fourier_spectrum(img)
+        log_mag, anisotropy = compute_rotational_anisotropy(img)
         avg_log_spectrum += log_mag
-        anisotropy_scores.append(compute_anisotropy_index(mag))
+        anisotropy_scores.append(anisotropy)
         
     avg_log_spectrum /= len(filter_images)
     avg_anisotropy = np.mean(anisotropy_scores)
