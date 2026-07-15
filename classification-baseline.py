@@ -1,24 +1,72 @@
-# %% [code]
-# This Python 3 environment comes with many helpful analytics libraries installed
-# It is defined by the kaggle/python Docker image: https://github.com/kaggle/docker-python
-# For example, here's several helpful packages to load
+import numpy as np
+import torch
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, classification_report
+from tqdm import tqdm
 
-import numpy as np # linear algebra
-import pandas as pd # data processing, CSV file I/O (e.g. pd.read_csv)
+def extract_features(dataloader, flatten=True):
+    """
+    Extracts features and labels from a PyTorch dataloader.
+    If flatten is True, flattens the image tensors to 1D arrays per sample,
+    suitable for simple machine learning models.
+    """
+    X_list = []
+    y_list = []
+    
+    # We use tqdm if possible, if not just iterate
+    for images, labels in dataloader:
+        if flatten:
+            # Flatten all dimensions except batch size
+            images = images.view(images.size(0), -1)
+        X_list.append(images.cpu().numpy())
+        y_list.append(labels.cpu().numpy())
+        
+    X = np.concatenate(X_list, axis=0)
+    y = np.concatenate(y_list, axis=0)
+    
+    return X, y
 
-# Input data files are available in the read-only "../input/" directory
-# For example, running this (by clicking run or pressing Shift+Enter) will list all files under the input directory
+def train_evaluate_knn(X_train, y_train, X_test, y_test, n_neighbors=5, **kwargs):
+    """
+    Trains a k-Nearest Neighbors classifier and evaluates it on test data.
+    """
+    print(f"Training kNN with n_neighbors={n_neighbors}...")
+    model = KNeighborsClassifier(n_neighbors=n_neighbors, **kwargs)
+    model.fit(X_train, y_train)
+    
+    print("Evaluating kNN...")
+    y_pred = model.predict(X_test)
+    
+    acc = accuracy_score(y_test, y_pred)
+    prec = precision_score(y_test, y_pred, average='weighted', zero_division=0)
+    rec = recall_score(y_test, y_pred, average='weighted', zero_division=0)
+    f1 = f1_score(y_test, y_pred, average='weighted', zero_division=0)
+    
+    print(f"kNN Results -> Accuracy: {acc:.4f} | Precision: {prec:.4f} | Recall: {rec:.4f} | F1: {f1:.4f}")
+    print("\nClassification Report (kNN):")
+    print(classification_report(y_test, y_pred, zero_division=0))
+    
+    return model, y_pred
 
-import os
-for dirname, _, filenames in os.walk('/kaggle/input'):
-    for filename in filenames:
-        print(os.path.join(dirname, filename))
-
-# You can write up to 20GB to the current directory (/kaggle/working/) that gets preserved as output when you create a version using "Save & Run All" 
-# You can also write temporary files to /kaggle/temp/, but they won't be saved outside of the current session
-
-# Use the kagglehub client library to attach Kaggle resources like competitions, datasets, and models to your session
-# Learn more about kagglehub: https://github.com/Kaggle/kagglehub/blob/main/README.md
-
-import kagglehub
-# kagglehub.dataset_download('<owner>/<dataset-slug>')
+def train_evaluate_random_forest(X_train, y_train, X_test, y_test, n_estimators=100, **kwargs):
+    """
+    Trains a Random Forest classifier and evaluates it on test data.
+    """
+    print(f"Training Random Forest with n_estimators={n_estimators}...")
+    model = RandomForestClassifier(n_estimators=n_estimators, **kwargs)
+    model.fit(X_train, y_train)
+    
+    print("Evaluating Random Forest...")
+    y_pred = model.predict(X_test)
+    
+    acc = accuracy_score(y_test, y_pred)
+    prec = precision_score(y_test, y_pred, average='weighted', zero_division=0)
+    rec = recall_score(y_test, y_pred, average='weighted', zero_division=0)
+    f1 = f1_score(y_test, y_pred, average='weighted', zero_division=0)
+    
+    print(f"Random Forest Results -> Accuracy: {acc:.4f} | Precision: {prec:.4f} | Recall: {rec:.4f} | F1: {f1:.4f}")
+    print("\nClassification Report (Random Forest):")
+    print(classification_report(y_test, y_pred, zero_division=0))
+    
+    return model, y_pred
