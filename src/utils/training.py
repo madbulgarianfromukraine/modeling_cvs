@@ -16,6 +16,7 @@ import torch
 import numpy as np
 import random
 import pandas as pd
+import copy
 
 import matplotlib.pyplot as plt
 import torch.nn.functional as F
@@ -177,6 +178,7 @@ def train_model_stages(
     patience_counter = 0
     train_loss_history = []
     val_loss_history = []
+    best_model_state = None
 
     print(f"Starting training of the {stage_name} in {max_epochs} epochs.")
     start_time = time.time()
@@ -209,18 +211,25 @@ def train_model_stages(
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             patience_counter = 0
+            best_model_state = copy.deepcopy(model.state_dict())
         else:
             patience_counter += 1
 
         if patience_counter >= patience:
             print(f"\n>>> EARLY STOPPING triggered at Epoch {epoch} <<<")
             print(f">>> Validation loss did not improve for {patience} consecutive epochs. Breaking cycle.")
-            save_checkpoint(model=model, optimizer=optimizer, epoch=epoch, loss=val_loss_history[-1],
+            if best_model_state is not None:
+                model.load_state_dict(best_model_state)
+                print(">>> Restored best model weights <<<")
+            save_checkpoint(model=model, optimizer=optimizer, epoch=epoch, loss=best_val_loss,
                             path=checkpoint_dir, file_name=f"finished_{stage_name}")
             break
 
         if epoch == max_epochs:
-            save_checkpoint(model=model, optimizer=optimizer, epoch=epoch, loss=val_loss_history[-1],
+            if best_model_state is not None:
+                model.load_state_dict(best_model_state)
+                print(">>> Restored best model weights <<<")
+            save_checkpoint(model=model, optimizer=optimizer, epoch=epoch, loss=best_val_loss,
                             path=checkpoint_dir, file_name=f"finished_{stage_name}_max_epochs")
 
     if vis_finish_event is not None:
