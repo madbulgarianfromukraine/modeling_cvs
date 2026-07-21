@@ -153,111 +153,87 @@ def compare_all_domain_states(nat_patterns, ft_patterns, scr_patterns, layer_nam
         title_suffix=f"{layer_name} (Fine-Tuned vs Screen Scratch)"
     )
 
-#  Fourier analysis
+#  Fourier analysis & Normalized Difference Anisotropy Index (NDI)
 def _step1_preprocess(image_data):
-    """Step 1: Convert image to grayscale."""
+    """
+    Step 1: Convert image to grayscale and crop to an 80x80 central square.
+    This guarantees equal grid dimensions for balanced 2D FFT frequency sampling.
+    """
     if torch.is_tensor(image_data):
         image_data = image_data.detach().cpu().numpy()
         
     if image_data.ndim == 3:
         if image_data.shape[0] == 3:  # CHW format
-            # Use standard perceptual luminance weighting (ITU-R 601-2)
-            return 0.2989 * image_data[0] + 0.5870 * image_data[1] + 0.1140 * image_data[2]
+            gray = 0.2989 * image_data[0] + 0.5870 * image_data[1] + 0.1140 * image_data[2]
         else:                         # HWC format
-            return 0.2989 * image_data[:, :, 0] + 0.5870 * image_data[:, :, 1] + 0.1140 * image_data[:, :, 2]
-    return image_data
+            gray = 0.2989 * image_data[:, :, 0] + 0.5870 * image_data[:, :, 1] + 0.1140 * image_data[:, :, 2]
+    else:
+        gray = image_data
 
-def _step2_fft_and_sample(masked_image, angle, mask_x_dc, mask_y_dc):
-    """Step 2: Rotate the pre-masked image, compute FFT, and sample Cardinal axes."""
-    # Rotate the already masked image
-    rotated = scipy.ndimage.rotate(masked_image, angle, reshape=False, order=3, mode='constant', cval=0.0)
-    
-    # 2D FFT
-    f_transform = np.fft.ifftshift(rotated)
-    f_transform = np.fft.fft2(f_transform)
-    f_shift = np.fft.fftshift(f_transform)
-    magnitude = np.abs(f_shift)
-    
-    # Sample amplitudes using the pre-calculated DC masks
-    amp_horiz = np.sum(magnitude[mask_y_dc])
-    amp_vert = np.sum(magnitude[mask_x_dc])
-    
-    return angle, amp_horiz, amp_vert, np.log(1 + magnitude)
+    # Crop to central square of size min(h, w)
+    h, w = gray.shape
+    size = min(h, w)
+    dy = (h - size) // 2
+    dx = (w - size) // 2
+    return gray[dy:dy+size, dx:dx+size]
 
-def _step3_rotational_sampling(image_gray, dc_radius, max_workers):
-    """Step 3: Precompute masks, iteratively rotate the image, and sample amplitudes."""
-    contour_amplitudes = {}
-    angles = list(range(0, 90, 3))
-    
-    # PRECOMPUTE all spatial and frequency masks ONCE (reshape=False means dimensions are constant)
+def compute_fourier_spectrum(image_gray, dc_radius=5):
+    """
+    Step 2: Apply a circular spatial mask, compute 2D FFT, and calculate
+    Normalized Difference Index (NDI) across cardinal and oblique sectors.
+    """
     h, w = image_gray.shape
     cy, cx = h // 2, w // 2
-    Y, X = np.ogrid[:h, :w]
     
-    # Circular crop mask (spatial domain)
+    Y, X = np.ogrid[:h, :w]
     radius = min(h, w) / 2.0
     dist_from_center = np.sqrt((X - cx)**2 + (Y - cy)**2)
+    
+    # 1. Circular spatial crop
     circular_mask = dist_from_center <= radius
     masked_image = image_gray * circular_mask
     
-    # Frequency sampling masks (exclude DC component)
-    mask_y_dc = (X == cx) & (dist_from_center > dc_radius)
-    mask_x_dc = (Y == cy) & (dist_from_center > dc_radius)
+    # 2. 2D Fast Fourier Transform
+    f_transform = np.fft.ifftshift(masked_image)
+    f_transform = np.fft.fft2(f_transform)
+    f_shift = np.fft.fftshift(f_transform)
     
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = [executor.submit(_step2_fft_and_sample, masked_image, a, mask_x_dc, mask_y_dc) for a in angles]
-        results = [f.result() for f in futures]
+    magnitude = np.abs(f_shift)
+    log_magnitude = np.log(1 + magnitude)
+    
+    # 3. Frequency sector masks (exclude DC center component)
+    Y_grid, X_grid = np.indices((h, w))
+    theta = np.degrees(np.arctan2(cy - Y_grid, X_grid - cx)) % 180
+    R = dist_from_center
+    
+    mask_dc = R > dc_radius
+    mask_cardinal = ((theta < 10) | (theta > 170) | ((theta > 80) & (theta < 100))) & mask_dc
+    mask_oblique = (((theta > 35) & (theta < 55)) | ((theta > 125) & (theta < 145))) & mask_dc
+    
+    cardinal_energy = np.sum(magnitude[mask_cardinal])
+    oblique_energy = np.sum(magnitude[mask_oblique])
+    
+    total_energy = cardinal_energy + oblique_energy
+    if total_energy == 0:
+        ndi = 0.0
+    else:
+        ndi = (cardinal_energy - oblique_energy) / total_energy
         
-    base_log_mag = None
-    for angle, amp_horiz, amp_vert, log_mag in results:
-        contour_amplitudes[angle] = amp_horiz
-        contour_amplitudes[angle + 90] = amp_vert
-        if angle == 0:
-            base_log_mag = log_mag
-            
-    return contour_amplitudes, base_log_mag
+    return magnitude, log_magnitude, ndi
 
-def _step4_average_orientations(contour_amplitudes):
-    """Step 4: Average sampled amplitudes across specific angular windows."""
-    def get_avg_for_window(target_angles):
-        vals = []
-        for a, amp in contour_amplitudes.items():
-            for t in target_angles:
-                dist = min(abs(a - t), 180 - abs(a - t))
-                if dist <= 21:
-                    vals.append(amp)
-        return np.mean(vals) if vals else 0.0
-
-    horiz_avg = get_avg_for_window([0, 180])
-    vert_avg = get_avg_for_window([90])
-    oblique_avg = get_avg_for_window([45]) # ignore 135
-    return horiz_avg, vert_avg, oblique_avg
-
-def _step5_normalize_index(oblique_avg, contour_amplitudes):
-    """Step 5: Normalize the oblique average by the global maximum amplitude."""
-    max_amp = max(contour_amplitudes.values()) if contour_amplitudes else 1.0
-    if max_amp == 0:
-        max_amp = 1.0
-    return oblique_avg / max_amp
-
-def compute_rotational_anisotropy(image_data, dc_radius=5, max_workers=10):
+def compute_rotational_anisotropy(image_data, dc_radius=5):
     """
-    Computes anisotropy index using iterative rotational sampling.
-    Matches Duggan & Gerhardstein (2023) methodology.
+    Preprocesses image data (grayscale + square crop) and computes Fourier NDI metrics.
     """
     image_gray = _step1_preprocess(image_data)
-    contour_amplitudes, base_log_mag = _step3_rotational_sampling(image_gray, dc_radius, max_workers)
-    horiz_avg, vert_avg, oblique_avg = _step4_average_orientations(contour_amplitudes)
-    anisotropy_index = _step5_normalize_index(oblique_avg, contour_amplitudes)
-    
-    return base_log_mag, anisotropy_index
+    _, log_mag, ndi = compute_fourier_spectrum(image_gray, dc_radius=dc_radius)
+    return log_mag, ndi
 
 def analyze_layer_filters(filter_images):
-    """Averages spectral transformations across all channels in a given target layer."""
+    """Averages spectral transformations and NDI anisotropy across all channels in a target layer."""
     if len(filter_images) == 0:
-        return np.zeros((300, 200)), 0.0 # Fallback placeholder matrix if lists are empty
+        return np.zeros((80, 80)), 0.0
 
-    # Inspect first image to determine target resolution dimensions
     sample_log, _ = compute_rotational_anisotropy(filter_images[0])
     h, w = sample_log.shape
     
@@ -265,9 +241,9 @@ def analyze_layer_filters(filter_images):
     anisotropy_scores = []
     
     for img in filter_images:
-        log_mag, anisotropy = compute_rotational_anisotropy(img)
+        log_mag, ndi = compute_rotational_anisotropy(img)
         avg_log_spectrum += log_mag
-        anisotropy_scores.append(anisotropy)
+        anisotropy_scores.append(ndi)
         
     avg_log_spectrum /= len(filter_images)
     avg_anisotropy = np.mean(anisotropy_scores)
