@@ -25,8 +25,6 @@ import torch.nn.functional as F
 import torch.nn as nn
 from typing import List, Tuple, Optional
 
-os.makedirs("/kaggle/working/", exist_ok=True)
-
 def save_checkpoint(model, optimizer, epoch, loss, path="/kaggle/working/", file_name=None):
     cpu_state_dict = {k: v.to('cpu') for k, v in model.state_dict().items()}
     
@@ -74,10 +72,20 @@ def load_checkpoint(model, optimizer, path, device):
         return 0, float('inf')
 
 
+from torchvision.transforms import v2
+
+try:
+    os.makedirs("/kaggle/working/", exist_ok=True)
+except Exception:
+    pass
+
+
 def train_and_eval_epoch(epoch, model, train_loader, val_loader, 
                          optimizer, loss_fn, device, log_interval, 
                          checkpoint_dir, stage_name: str = "nat_images", bn_eval: bool = False, 
-                         augmenter: Optional[nn.Module] = None) -> Tuple[float, Optional[float]]:
+                         augmenter: Optional[nn.Module] = None,
+                         cutmix: Optional[nn.Module] = None,
+                         cutmix_prob: float = 0.5) -> Tuple[float, Optional[float]]:
     epoch_start_time = time.time()
 
     model.train()
@@ -91,14 +99,10 @@ def train_and_eval_epoch(epoch, model, train_loader, val_loader,
         data, target = data.to(device), target.to(device)
 
         if augmenter:
-            try:
-                aug_out = augmenter(data, target)
-                if isinstance(aug_out, tuple) and len(aug_out) == 2:
-                    data, target = aug_out
-                else:
-                    data = aug_out
-            except TypeError:
-                data = augmenter(data)
+            data = augmenter(data)
+
+        if cutmix and torch.rand(1).item() < cutmix_prob:
+            data, target = cutmix(data, target)
             
         def __closure():
             optimizer.zero_grad()
@@ -179,7 +183,9 @@ def train_model_stages(
     vis_queue=None,
     vis_finish_event=None,
     bn_eval: bool = False,
-    augmenter: Optional[nn.Module] = None
+    augmenter: Optional[nn.Module] = None,
+    cutmix: Optional[nn.Module] = None,
+    cutmix_prob: float = 0.5
 ):
     print(f"=== Training on the {stage_name} ===")
 
@@ -207,7 +213,9 @@ def train_model_stages(
             checkpoint_dir=checkpoint_dir,
             stage_name=stage_name,
             bn_eval=bn_eval,
-            augmenter=augmenter
+            augmenter=augmenter,
+            cutmix=cutmix,
+            cutmix_prob=cutmix_prob
         )
 
         train_loss_history.append(train_loss)
