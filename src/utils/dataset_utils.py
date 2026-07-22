@@ -1,6 +1,15 @@
 # %% [code]
 import numpy as np
 import torch
+import os
+import json
+import shutil
+import glob
+import sys
+import re
+from datetime import datetime
+from kaggle_secrets import UserSecretsClient
+from kaggle.api.kaggle_api_extended import KaggleApi
 
 def get_labels(dataset):
     """
@@ -80,3 +89,89 @@ def get_labels(dataset):
     except Exception:
         return [label for _, label in dataset]
 
+
+def get_auto_version_notes(default_note: str = "Automated checkpoint update") -> str:
+    """
+    Automatically resolves version notes from Kaggle notebook metadata and timestamp.
+    """
+    kernel_slug = os.environ.get("KAGGLE_SLUG")
+    run_type = os.environ.get("KAGGLE_KERNEL_RUN_TYPE")
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+    if kernel_slug or run_type:
+        details = []
+        if kernel_slug:
+            details.append(kernel_slug)
+        if run_type:
+            details.append(f"[{run_type}]")
+        details.append(f"({timestamp})")
+        return " ".join(details)
+
+    return f"{default_note} ({timestamp})"
+
+
+def push_checkpoints_to_kaggle_dataset(
+    dataset_slug: str,
+    checkpoint_paths: list[str] | str,
+    version_notes: str | None = None,
+    exclude_patterns: list[str] | None = None,
+    staging_dir: str = "/kaggle/working/checkpoint_staging"
+) -> None:
+    if not version_notes:
+        version_notes = get_auto_version_notes()
+
+    if isinstance(checkpoint_paths, str):
+        checkpoint_paths = [checkpoint_paths]
+
+    # Resolve paths (expanding wildcards if provided)
+    resolved_paths = []
+    for path in checkpoint_paths:
+        matches = glob.glob(path)
+        if matches:
+            resolved_paths.extend(sorted(matches))
+        elif os.path.exists(path):
+            resolved_paths.append(path)
+        else:
+            raise FileNotFoundError(f"Checkpoint file not found: {path}")
+
+    # Filter out excluded patterns (e.g. 'warmup')
+    if exclude_patterns:
+        resolved_paths = [
+            p for p in resolved_paths
+            if not any(pat in os.path.basename(p) for pat in exclude_patterns)
+        ]
+
+    if not resolved_paths:
+        raise FileNotFoundError("No valid checkpoint files found matching the criteria.")
+
+    user_secrets = UserSecretsClient()
+    os.environ['KAGGLE_USERNAME'] = user_secrets.get_secret("KAGGLE_USERNAME")
+    os.environ['KAGGLE_KEY'] = user_secrets.get_secret("KAGGLE_KEY")
+
+    api = KaggleApi()
+    api.authenticate()
+
+    if os.path.exists(staging_dir):
+        shutil.rmtree(staging_dir)
+    os.makedirs(staging_dir, exist_ok=True)
+
+    for path in resolved_paths:
+        shutil.copy(path, staging_dir)
+
+    dataset_title = dataset_slug.split("/")[-1].replace("-", " ").title()
+    metadata = {
+        "title": dataset_title,
+        "id": dataset_slug,
+        "licenses": [{"name": "CC0-1.0"}]
+    }
+
+    with open(os.path.join(staging_dir, "dataset-metadata.json"), "w") as f:
+        json.dump(metadata, f)
+
+    api.dataset_create_version(
+        staging_dir,
+        version_notes=version_notes,
+        delete_old_versions=False
+    )
+
+    shutil.rmtree(staging_dir)
