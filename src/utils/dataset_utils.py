@@ -92,24 +92,39 @@ def get_labels(dataset):
         return [label for _, label in dataset]
 
 
-def get_auto_version_notes(default_note: str = "Automated checkpoint update") -> str:
+def extract_kaggle_notebook_version_id() -> str | None:
     """
-    Automatically resolves version notes from Kaggle notebook metadata and timestamp.
+    Extracts scriptVersionId from notebook metadata if running inside a Kaggle run.
     """
-    kernel_slug = os.environ.get("KAGGLE_SLUG")
-    run_type = os.environ.get("KAGGLE_KERNEL_RUN_TYPE")
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+    for nb_path in ["/kaggle/working/__notebook__.ipynb", "__notebook__.ipynb"]:
+        if os.path.exists(nb_path):
+            try:
+                with open(nb_path, "r", encoding="utf-8") as f:
+                    content = f.read()
+                    match = re.search(r'scriptVersionId=(\d+)', content)
+                    if match:
+                        return f"v{match.group(1)}"
+            except Exception:
+                pass
+    return None
 
-    if kernel_slug or run_type:
-        details = []
+
+def get_auto_version_notes(default_note: str = "Auto checkpoint update") -> str:
+    """
+    Constructs a concise Kaggle dataset version note (< 50 characters limit).
+    E.g.: 'v337155846 checkpoints' or 'model-cvs-tiny-example checkpoints'
+    """
+    version_id = extract_kaggle_notebook_version_id()
+    if version_id:
+        note = f"{version_id} checkpoints"
+    else:
+        kernel_slug = os.environ.get("KAGGLE_SLUG")
         if kernel_slug:
-            details.append(kernel_slug)
-        if run_type:
-            details.append(f"[{run_type}]")
-        details.append(f"({timestamp})")
-        return " ".join(details)
+            note = f"{kernel_slug} checkpoints"
+        else:
+            note = default_note
 
-    return f"{default_note} ({timestamp})"
+    return note.strip()[:50]
 
 
 def push_checkpoints_to_kaggle_dataset(
@@ -119,8 +134,11 @@ def push_checkpoints_to_kaggle_dataset(
     exclude_patterns: list[str] | None = None,
     staging_dir: str = "/kaggle/working/checkpoint_staging"
 ) -> None:
-    if not version_notes:
+    if version_notes:
+        version_notes = version_notes.strip()[:50]
+    else:
         version_notes = get_auto_version_notes()
+
 
     if isinstance(checkpoint_paths, str):
         checkpoint_paths = [checkpoint_paths]
@@ -197,16 +215,40 @@ def trigger_kaggle_notebook(
         shutil.rmtree(staging_dir)
     os.makedirs(staging_dir, exist_ok=True)
 
-    subprocess.run([
-        "kaggle", "kernels", "pull",
-        notebook_slug,
-        "-p", staging_dir,
-        "-m"
-    ], check=True)
-
     meta_path = os.path.join(staging_dir, "kernel-metadata.json")
-    with open(meta_path, "r", encoding="utf-8") as f:
-        meta = json.load(f)
+
+    # Try to pull existing notebook metadata
+    try:
+        subprocess.run([
+            "kaggle", "kernels", "pull",
+            notebook_slug,
+            "-p", staging_dir,
+            "-m"
+        ], check=True, capture_output=True, text=True)
+        with open(meta_path, "r", encoding="utf-8") as f:
+            meta = json.load(f)
+    except Exception as e:
+        # Fallback if kernel does not exist yet or slug uses hyphens/underscores
+        print(f"Warning: Could not pull kernel metadata for {notebook_slug} ({e}). Creating new metadata...")
+        kernel_title = notebook_slug.split("/")[-1].replace("-", " ").replace("_", " ").title()
+        script_file = "script.py"
+        script_path = os.path.join(staging_dir, script_file)
+        with open(script_path, "w", encoding="utf-8") as f:
+            f.write("# Triggered kernel run\nprint('Triggered')\n")
+        meta = {
+            "id": notebook_slug,
+            "title": kernel_title,
+            "code_file": script_file,
+            "language": "python",
+            "kernel_type": "script",
+            "is_private": "true",
+            "enable_gpu": "true" if enable_gpu else "false",
+            "enable_tpu": "false",
+            "enable_internet": "true",
+            "dataset_sources": [],
+            "kernel_sources": [],
+            "competition_sources": []
+        }
 
     meta["enable_gpu"] = "true" if enable_gpu else "false"
     if accelerator:
@@ -222,6 +264,7 @@ def trigger_kaggle_notebook(
     subprocess.run(cmd, check=True)
 
     shutil.rmtree(staging_dir)
+
 
 
 
