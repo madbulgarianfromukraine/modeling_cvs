@@ -1,9 +1,24 @@
+# %% [code]
+# %% [code]
+# %% [code]
+# %% [code]
+# %% [code]
+# %% [code]
+# %% [code]
+# %% [code]
+# %% [code]
+# %% [code]
+# %% [code]
+# %% [code]
+# %% [code]
+# %% [code]
 import os
 import time
 import torch
 import numpy as np
 import random
 import pandas as pd
+import copy
 
 import matplotlib.pyplot as plt
 import torch.nn.functional as F
@@ -76,7 +91,14 @@ def train_and_eval_epoch(epoch, model, train_loader, val_loader,
         data, target = data.to(device), target.to(device)
 
         if augmenter:
-            data = augmenter(data)
+            try:
+                aug_out = augmenter(data, target)
+                if isinstance(aug_out, tuple) and len(aug_out) == 2:
+                    data, target = aug_out
+                else:
+                    data = aug_out
+            except TypeError:
+                data = augmenter(data)
             
         def __closure():
             optimizer.zero_grad()
@@ -165,7 +187,6 @@ def train_model_stages(
     patience_counter = 0
     train_loss_history = []
     val_loss_history = []
-
     best_model_state = None
 
     print(f"Starting training of the {stage_name} in {max_epochs} epochs.")
@@ -200,9 +221,7 @@ def train_model_stages(
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             patience_counter = 0
-            # Clone and move tensors to CPU to avoid potential GPU memory leaks
-            best_model_state = {k: v.clone().to('cpu') for k, v in model.state_dict().items()}
-            print(f" New best validation loss achieved: {best_val_loss:.6f}. Saving weights internally.")
+            best_model_state = copy.deepcopy(model.state_dict())
         else:
             patience_counter += 1
 
@@ -210,23 +229,18 @@ def train_model_stages(
         if patience_counter >= patience:
             print(f"\n>>> EARLY STOPPING triggered at Epoch {epoch} <<<")
             print(f">>> Validation loss did not improve for {patience} consecutive epochs. Breaking cycle.")
-            
-            # Load the best weights back into the model before final save
             if best_model_state is not None:
-                print("🔄 Restoring best weights (lowest validation loss) to model before checkpoint creation...")
-                model.load_state_dict({k: v.to(device) for k, v in best_model_state.items()})
-                
+                model.load_state_dict(best_model_state)
+                print(">>> Restored best model weights <<<")
             save_checkpoint(model=model, optimizer=optimizer, epoch=epoch, loss=best_val_loss,
                             path=checkpoint_dir, file_name=f"finished_{stage_name}")
             break
 
         # Check maximum epoch condition
         if epoch == max_epochs:
-            # Load the best weights back into the model before final save
             if best_model_state is not None:
-                print("🔄 Restoring best weights (lowest validation loss) to model before checkpoint creation...")
-                model.load_state_dict({k: v.to(device) for k, v in best_model_state.items()})
-                
+                model.load_state_dict(best_model_state)
+                print(">>> Restored best model weights <<<")
             save_checkpoint(model=model, optimizer=optimizer, epoch=epoch, loss=best_val_loss,
                             path=checkpoint_dir, file_name=f"finished_{stage_name}_max_epochs")
 

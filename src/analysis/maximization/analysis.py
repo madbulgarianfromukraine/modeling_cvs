@@ -1,4 +1,6 @@
 # %% [code]
+# %% [code]
+# %% [code]
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
@@ -6,6 +8,8 @@ import matplotlib.pyplot as plt
 from skimage.metrics import structural_similarity as ssim
 import torch.nn.functional as F
 import torchvision.utils as vutils
+import scipy.ndimage
+from concurrent.futures import ThreadPoolExecutor
 
 
 # analyzing SIMM, mse, mae
@@ -150,75 +154,97 @@ def compare_all_domain_states(nat_patterns, ft_patterns, scr_patterns, layer_nam
         title_suffix=f"{layer_name} (Fine-Tuned vs Screen Scratch)"
     )
 
-#  Fourier analysis
-def compute_fourier_spectrum(image_data):
-    """Computes centered 2D log-magnitude Fourier spectrum from PyTorch Tensors or Numpy arrays."""
-    # Convert PyTorch tensor to numpy if necessary
+#  Fourier analysis & Normalized Difference Anisotropy Index (NDI)
+def _step1_preprocess(image_data):
+    """
+    Step 1: Convert image to grayscale and crop to an 80x80 central square.
+    This guarantees equal grid dimensions for balanced 2D FFT frequency sampling.
+    """
     if torch.is_tensor(image_data):
         image_data = image_data.detach().cpu().numpy()
         
-    # Handle batch or channel dims: squeeze out batch or mean-collapse RGB channels to grayscale
     if image_data.ndim == 3:
         if image_data.shape[0] == 3:  # CHW format
-            image_gray = np.mean(image_data, axis=0)
+            gray = 0.2989 * image_data[0] + 0.5870 * image_data[1] + 0.1140 * image_data[2]
         else:                         # HWC format
-            image_gray = np.mean(image_data, axis=2)
+            gray = 0.2989 * image_data[:, :, 0] + 0.5870 * image_data[:, :, 1] + 0.1140 * image_data[:, :, 2]
     else:
-        image_gray = image_data
+        gray = image_data
 
-    # 2D Fast Fourier Transform and shift DC component to center
-    f_transform = np.fft.ifftshift(image_gray)
+    # Crop to central square of size min(h, w)
+    h, w = gray.shape
+    size = min(h, w)
+    dy = (h - size) // 2
+    dx = (w - size) // 2
+    return gray[dy:dy+size, dx:dx+size]
+
+def compute_fourier_spectrum(image_gray, dc_radius=5):
+    """
+    Step 2: Apply a circular spatial mask, compute 2D FFT, and calculate
+    Normalized Difference Index (NDI) across cardinal and oblique sectors.
+    """
+    h, w = image_gray.shape
+    cy, cx = h // 2, w // 2
+    
+    Y, X = np.ogrid[:h, :w]
+    radius = min(h, w) / 2.0
+    dist_from_center = np.sqrt((X - cx)**2 + (Y - cy)**2)
+    
+    # 1. Circular spatial crop
+    circular_mask = dist_from_center <= radius
+    masked_image = image_gray * circular_mask
+    
+    # 2. 2D Fast Fourier Transform
+    f_transform = np.fft.ifftshift(masked_image)
     f_transform = np.fft.fft2(f_transform)
     f_shift = np.fft.fftshift(f_transform)
     
     magnitude = np.abs(f_shift)
     log_magnitude = np.log(1 + magnitude)
-    return magnitude, log_magnitude
-
-def compute_anisotropy_index(magnitude_spectrum, dc_radius=5):
-    """
-    Calculates the ratio of Cardinal (0, 90 deg) to Oblique (45, 135 deg) energy.
-    Matches Duggan & Gerhardstein (2023) structural statistics workflow.
-    """
-    h, w = magnitude_spectrum.shape
-    cy, cx = h // 2, w // 2
     
-    Y, X = np.indices((h, w))
-    # Calculate angular distribution across the polar map (0 to 180 degrees)
-    theta = np.degrees(np.arctan2(cy - Y, X - cx)) % 180
-    R = np.sqrt((X - cx)**2 + (Y - cy)**2)
+    # 3. Frequency sector masks (exclude DC center component)
+    Y_grid, X_grid = np.indices((h, w))
+    theta = np.degrees(np.arctan2(cy - Y_grid, X_grid - cx)) % 180
+    R = dist_from_center
     
-    # Boundary definitions using a +/- 10 degree tracking window tolerance
-    mask_cardinal = ((theta < 10) | (theta > 170) | ((theta > 80) & (theta < 100)))
-    mask_oblique = (((theta > 35) & (theta < 55)) | ((theta > 125) & (theta < 145)))
-    
-    # Exclude the massive DC center-pixel spike
     mask_dc = R > dc_radius
+    mask_cardinal = ((theta < 10) | (theta > 170) | ((theta > 80) & (theta < 100))) & mask_dc
+    mask_oblique = (((theta > 35) & (theta < 55)) | ((theta > 125) & (theta < 145))) & mask_dc
     
-    cardinal_energy = np.sum(magnitude_spectrum[mask_cardinal & mask_dc])
-    oblique_energy = np.sum(magnitude_spectrum[mask_oblique & mask_dc])
+    cardinal_energy = np.sum(magnitude[mask_cardinal])
+    oblique_energy = np.sum(magnitude[mask_oblique])
     
-    if oblique_energy == 0:
-        return 0
+    total_energy = cardinal_energy + oblique_energy
+    if total_energy == 0:
+        ndi = 0.0
+    else:
+        ndi = (cardinal_energy - oblique_energy) / total_energy
         
-    return cardinal_energy / oblique_energy
+    return magnitude, log_magnitude, ndi
+
+def compute_rotational_anisotropy(image_data, dc_radius=5):
+    """
+    Preprocesses image data (grayscale + square crop) and computes Fourier NDI metrics.
+    """
+    image_gray = _step1_preprocess(image_data)
+    _, log_mag, ndi = compute_fourier_spectrum(image_gray, dc_radius=dc_radius)
+    return log_mag, ndi
 
 def analyze_layer_filters(filter_images):
-    """Averages spectral transformations across all channels in a given target layer."""
+    """Averages spectral transformations and NDI anisotropy across all channels in a target layer."""
     if len(filter_images) == 0:
-        return np.zeros((300, 200)), 0.0 # Fallback placeholder matrix if lists are empty
+        return np.zeros((80, 80)), 0.0
 
-    # Inspect first image to determine target resolution dimensions
-    _, sample_log = compute_fourier_spectrum(filter_images[0])
+    sample_log, _ = compute_rotational_anisotropy(filter_images[0])
     h, w = sample_log.shape
     
     avg_log_spectrum = np.zeros((h, w), dtype=np.float64)
     anisotropy_scores = []
     
     for img in filter_images:
-        mag, log_mag = compute_fourier_spectrum(img)
+        log_mag, ndi = compute_rotational_anisotropy(img)
         avg_log_spectrum += log_mag
-        anisotropy_scores.append(compute_anisotropy_index(mag))
+        anisotropy_scores.append(ndi)
         
     avg_log_spectrum /= len(filter_images)
     avg_anisotropy = np.mean(anisotropy_scores)

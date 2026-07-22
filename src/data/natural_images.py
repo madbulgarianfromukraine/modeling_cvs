@@ -5,6 +5,7 @@
 # %% [code]
 # %% [code]
 # %% [code]
+# %% [code]
 import torch
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -15,6 +16,7 @@ import pathlib
 import os
 
 from torchvision import datasets
+import torch.nn as nn
 import torch.nn.functional as F
 from torchvision.transforms import v2
 from torch.utils.data import Dataset, Subset, ConcatDataset
@@ -227,20 +229,3 @@ def visualize_dataset_distribution(train_ds, val_ds=[], test_ds=[], class_names=
     print(f"Total Validation Samples: {len(val_labels)} ({len(val_labels) / total_samples * 100:.1f}%)")
     print(f"Total test Samples:       {len(test_labels)} ({len(test_labels) / total_samples * 100:.1f}%)")
     print(f"Total Combined Samples:   {total_samples}")
-
-
-class CutMixCollate:
-    def __init__(self, num_classes, cutmix_prob=0.5):
-        self.cutmix = v2.CutMix(num_classes=num_classes)
-        self.cutmix_prob = cutmix_prob
-
-    def __call__(self, batch):
-        # 1. Run the default PyTorch stacking logic first
-        from torch.utils.data.dataloader import default_collate
-        images, labels = default_collate(batch)
-        
-        # 2. Apply batch-level stochastic logic safely within the worker thread
-        if torch.rand(1).item() < self.cutmix_prob:
-            images, labels = self.cutmix(images, labels)
-            
-        return images, labels
