@@ -7,6 +7,8 @@ import shutil
 import glob
 import sys
 import re
+import time
+import subprocess
 from datetime import datetime
 from kaggle_secrets import UserSecretsClient
 from kaggle.api.kaggle_api_extended import KaggleApi
@@ -175,3 +177,52 @@ def push_checkpoints_to_kaggle_dataset(
     )
 
     shutil.rmtree(staging_dir)
+
+
+def trigger_kaggle_notebook(
+    notebook_slug: str,
+    delay_seconds: int = 0,
+    enable_gpu: bool = True,
+    accelerator: str = "nvidiaTeslaT4",
+    staging_dir: str = "/kaggle/working/nb_staging"
+) -> None:
+    user_secrets = UserSecretsClient()
+    os.environ['KAGGLE_USERNAME'] = user_secrets.get_secret("KAGGLE_USERNAME")
+    os.environ['KAGGLE_KEY'] = user_secrets.get_secret("KAGGLE_KEY")
+
+    if delay_seconds > 0:
+        time.sleep(delay_seconds)
+
+    if os.path.exists(staging_dir):
+        shutil.rmtree(staging_dir)
+    os.makedirs(staging_dir, exist_ok=True)
+
+    subprocess.run([
+        "kaggle", "kernels", "pull",
+        notebook_slug,
+        "-p", staging_dir,
+        "-m"
+    ], check=True)
+
+    meta_path = os.path.join(staging_dir, "kernel-metadata.json")
+    with open(meta_path, "r", encoding="utf-8") as f:
+        meta = json.load(f)
+
+    meta["enable_gpu"] = "true" if enable_gpu else "false"
+    if accelerator:
+        meta["accelerator"] = accelerator
+
+    with open(meta_path, "w", encoding="utf-8") as f:
+        json.dump(meta, f, indent=2)
+
+    cmd = ["kaggle", "kernels", "push", "-p", staging_dir]
+    if accelerator:
+        cmd.extend(["--accelerator", accelerator])
+
+    subprocess.run(cmd, check=True)
+
+    shutil.rmtree(staging_dir)
+
+
+
+
