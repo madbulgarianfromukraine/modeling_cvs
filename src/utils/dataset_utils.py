@@ -203,8 +203,6 @@ def push_checkpoints_to_kaggle_dataset(
 def trigger_kaggle_notebook(
     notebook_slug: str,
     delay_seconds: int = 0,
-    enable_gpu: bool = True,
-    accelerator: str = "nvidiaTeslaT4",
     staging_dir: str = "/kaggle/working/nb_staging"
 ) -> None:
     user_secrets = UserSecretsClient()
@@ -220,7 +218,7 @@ def trigger_kaggle_notebook(
 
     meta_path = os.path.join(staging_dir, "kernel-metadata.json")
 
-    # Try to pull existing notebook metadata
+    # Pull existing notebook metadata and code file as configured on Kaggle
     try:
         subprocess.run([
             "kaggle", "kernels", "pull",
@@ -228,11 +226,8 @@ def trigger_kaggle_notebook(
             "-p", staging_dir,
             "-m"
         ], check=True, capture_output=True, text=True)
-        with open(meta_path, "r", encoding="utf-8") as f:
-            meta = json.load(f)
     except Exception as e:
-        # Fallback if kernel does not exist yet or slug uses hyphens/underscores
-        print(f"Warning: Could not pull kernel metadata for {notebook_slug} ({e}). Creating new metadata...")
+        print(f"Warning: Could not pull kernel metadata for {notebook_slug} ({e}). Creating fallback metadata...")
         kernel_title = notebook_slug.split("/")[-1].replace("-", " ").replace("_", " ").title()
         script_file = "script.py"
         script_path = os.path.join(staging_dir, script_file)
@@ -245,28 +240,20 @@ def trigger_kaggle_notebook(
             "language": "python",
             "kernel_type": "script",
             "is_private": "true",
-            "enable_gpu": "true" if enable_gpu else "false",
+            "enable_gpu": "true",
             "enable_tpu": "false",
             "enable_internet": "true",
             "dataset_sources": [],
             "kernel_sources": [],
             "competition_sources": []
         }
+        with open(meta_path, "w", encoding="utf-8") as f:
+            json.dump(meta, f, indent=2)
 
-    meta["enable_gpu"] = "true" if enable_gpu else "false"
-    if accelerator:
-        meta["accelerator"] = accelerator
-
-    with open(meta_path, "w", encoding="utf-8") as f:
-        json.dump(meta, f, indent=2)
-
-    cmd = ["kaggle", "kernels", "push", "-p", staging_dir]
-    if accelerator:
-        cmd.extend(["--accelerator", accelerator])
-
-    subprocess.run(cmd, check=True)
-
+    # Push kernel back to trigger execution using native notebook config without accelerator override
+    subprocess.run(["kaggle", "kernels", "push", "-p", staging_dir], check=True)
     shutil.rmtree(staging_dir)
+
 
 
 
