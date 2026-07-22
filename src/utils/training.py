@@ -90,7 +90,14 @@ def train_and_eval_epoch(epoch, model, train_loader, val_loader,
         data, target = data.to(device), target.to(device)
 
         if augmenter:
-            data = augmenter(data)
+            try:
+                aug_out = augmenter(data, target)
+                if isinstance(aug_out, tuple) and len(aug_out) == 2:
+                    data, target = aug_out
+                else:
+                    data = aug_out
+            except TypeError:
+                data = augmenter(data)
             
         def __closure():
             optimizer.zero_grad()
