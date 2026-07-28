@@ -195,8 +195,7 @@ def compute_fourier_spectrum(image_gray, dc_radius=5):
     masked_image = image_gray * circular_mask
     
     # 2. 2D Fast Fourier Transform
-    f_transform = np.fft.ifftshift(masked_image)
-    f_transform = np.fft.fft2(f_transform)
+    f_transform = np.fft.fft2(masked_image)
     f_shift = np.fft.fftshift(f_transform)
     
     magnitude = np.abs(f_shift)
@@ -250,5 +249,3 @@ def analyze_layer_filters(filter_images):
     avg_anisotropy = np.mean(anisotropy_scores)
     
     return avg_log_spectrum, avg_anisotropy
-
-print("Fourier mathematical engine compiled.")
