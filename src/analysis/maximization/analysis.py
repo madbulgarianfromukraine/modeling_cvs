@@ -195,7 +195,8 @@ def compute_fourier_spectrum(image_gray, dc_radius=5):
     masked_image = image_gray * circular_mask
     
     # 2. 2D Fast Fourier Transform
-    f_transform = np.fft.fft2(masked_image)
+    f_transform = np.fft.ifftshift(masked_image)
+    f_transform = np.fft.fft2(f_transform)
     f_shift = np.fft.fftshift(f_transform)
     
     magnitude = np.abs(f_shift)
@@ -229,6 +230,93 @@ def compute_rotational_anisotropy(image_data, dc_radius=5):
     _, log_mag, ndi = compute_fourier_spectrum(image_gray, dc_radius=dc_radius)
     return log_mag, ndi
 
+def plot_fourier_diagnostic(image_data, title="Fourier Diagnostic", dc_radius=5, figsize=(18, 4.5)):
+    """
+    Generates a 4-panel visual diagnostic figure:
+    1. Spatial Image (Circular Masked)
+    2. Log Magnitude Fourier Spectrum
+    3. Cardinal (Red) vs Oblique (Blue) Sector Overlay
+    4. 1D Angular Energy Distribution Plot across 0°, 45°, 90°, 135°, 180°
+    """
+    image_gray = _step1_preprocess(image_data)
+    magnitude, log_mag, ndi = compute_fourier_spectrum(image_gray, dc_radius=dc_radius)
+    
+    h, w = image_gray.shape
+    cy, cx = h // 2, w // 2
+    
+    Y_grid, X_grid = np.indices((h, w))
+    theta = np.degrees(np.arctan2(cy - Y_grid, X_grid - cx)) % 180
+    R = np.sqrt((X_grid - cx)**2 + (Y_grid - cy)**2)
+    
+    mask_dc = R > dc_radius
+    mask_cardinal = ((theta < 10) | (theta > 170) | ((theta > 80) & (theta < 100))) & mask_dc
+    mask_oblique = (((theta > 35) & (theta < 55)) | ((theta > 125) & (theta < 145))) & mask_dc
+    
+    # Calculate 1D Angular Energy Profile
+    angles = np.arange(0, 180, 2)
+    angular_energy = []
+    for a in angles:
+        bin_mask = (np.abs(theta - a) <= 2) & mask_dc
+        angular_energy.append(np.sum(magnitude[bin_mask]))
+    angular_energy = np.array(angular_energy)
+    if np.max(angular_energy) > 0:
+        angular_energy = angular_energy / np.max(angular_energy)
+        
+    fig, axes = plt.subplots(1, 4, figsize=figsize)
+    
+    # Panel 1: Masked Spatial Image
+    circular_mask = R <= (min(h, w) / 2.0)
+    masked_img = image_gray * circular_mask
+    axes[0].imshow(masked_img, cmap='gray')
+    axes[0].set_title(f"Spatial Image\n({title})", fontsize=11, fontweight='bold')
+    axes[0].axis('off')
+    
+    # Panel 2: Log Magnitude Spectrum
+    im1 = axes[1].imshow(log_mag, cmap='magma')
+    axes[1].set_title("Log Magnitude Spectrum", fontsize=11, fontweight='bold')
+    axes[1].axis('off')
+    plt.colorbar(im1, ax=axes[1], fraction=0.046, pad=0.04)
+    
+    # Panel 3: Sector Overlay (Red = Cardinal, Blue = Oblique)
+    overlay = np.zeros((h, w, 3))
+    norm_log = (log_mag - log_mag.min()) / (log_mag.max() - log_mag.min() + 1e-8)
+    overlay[:, :, 0] = norm_log
+    overlay[:, :, 1] = norm_log
+    overlay[:, :, 2] = norm_log
+    
+    overlay[mask_cardinal, 0] = 1.0 
+    overlay[mask_cardinal, 1] *= 0.3
+    overlay[mask_cardinal, 2] *= 0.3
+    
+    overlay[mask_oblique, 2] = 1.0  
+    overlay[mask_oblique, 0] *= 0.3
+    overlay[mask_oblique, 1] *= 0.3
+    
+    axes[2].imshow(overlay)
+    axes[2].set_title(f"Sector Overlay\nNDI = {ndi:.4f}", fontsize=11, fontweight='bold')
+    axes[2].axis('off')
+    
+    # Panel 4: 1D Angular Energy Distribution
+    axes[3].plot(angles, angular_energy, color='darkgreen', lw=2)
+    axes[3].axvspan(0, 10, color='red', alpha=0.2, label='Cardinal (0°/180°)')
+    axes[3].axvspan(80, 100, color='red', alpha=0.2, label='Cardinal (90°)')
+    axes[3].axvspan(170, 180, color='red', alpha=0.2)
+    
+    axes[3].axvspan(35, 55, color='blue', alpha=0.2, label='Oblique (45°)')
+    axes[3].axvspan(125, 145, color='blue', alpha=0.2, label='Oblique (135°)')
+    
+    axes[3].set_xticks([0, 45, 90, 135, 180])
+    axes[3].set_xlim(0, 180)
+    axes[3].set_xlabel("Angle θ (degrees)", fontsize=9)
+    axes[3].set_ylabel("Norm. Energy", fontsize=9)
+    axes[3].set_title("Angular Energy Distribution", fontsize=11, fontweight='bold')
+    axes[3].grid(True, linestyle='--', alpha=0.5)
+    axes[3].legend(fontsize=7, loc='upper right')
+    
+    plt.tight_layout()
+    plt.show()
+    return fig
+
 def analyze_layer_filters(filter_images):
     """Averages spectral transformations and NDI anisotropy across all channels in a target layer."""
     if len(filter_images) == 0:
@@ -249,3 +337,4 @@ def analyze_layer_filters(filter_images):
     avg_anisotropy = np.mean(anisotropy_scores)
     
     return avg_log_spectrum, avg_anisotropy
+
