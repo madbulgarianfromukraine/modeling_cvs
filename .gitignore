@@ -19,3 +19,6 @@ data/
 .vscode/
 # Mac
 .DS_Store
+#Antigravity
+.agents/
+.gemini/
