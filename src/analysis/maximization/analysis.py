@@ -318,19 +318,19 @@ def plot_fourier_diagnostic(image_data, title="Fourier Diagnostic", dc_radius=5,
     plt.show()
     return fig
 
-def analyze_layer_filters(filter_images):
+def analyze_layer_filters(filter_images, dc_radius=5):
     """Averages spectral transformations and NDI anisotropy across all channels in a target layer."""
     if len(filter_images) == 0:
         return np.zeros((80, 80)), 0.0
 
-    sample_log, _ = compute_rotational_anisotropy(filter_images[0])
+    sample_log, _ = compute_rotational_anisotropy(filter_images[0], dc_radius=dc_radius)
     h, w = sample_log.shape
     
     avg_log_spectrum = np.zeros((h, w), dtype=np.float64)
     anisotropy_scores = []
     
     for img in filter_images:
-        log_mag, ndi = compute_rotational_anisotropy(img)
+        log_mag, ndi = compute_rotational_anisotropy(img, dc_radius=dc_radius)
         avg_log_spectrum += log_mag
         anisotropy_scores.append(ndi)
         
@@ -338,4 +338,153 @@ def analyze_layer_filters(filter_images):
     avg_anisotropy = np.mean(anisotropy_scores)
     
     return avg_log_spectrum, avg_anisotropy
+
+
+def compute_layer_angular_distribution(filter_images, dc_radius=5):
+    """
+    Computes averaged 1D angular energy distribution profile and NDI anisotropy score
+    across all filter images in a target layer.
+    """
+    angles = np.arange(0, 180, 2)
+    if len(filter_images) == 0:
+        return angles, np.zeros_like(angles, dtype=np.float64), 0.0
+
+    sample_gray = _step1_preprocess(filter_images[0])
+    h, w = sample_gray.shape
+    cy, cx = h // 2, w // 2
+    Y_grid, X_grid = np.indices((h, w))
+    theta = np.degrees(np.arctan2(cy - Y_grid, X_grid - cx)) % 180
+    R = np.sqrt((X_grid - cx)**2 + (Y_grid - cy)**2)
+    mask_dc = R > dc_radius
+
+    total_angular_energy = np.zeros_like(angles, dtype=np.float64)
+    anisotropy_scores = []
+
+    for img in filter_images:
+        image_gray = _step1_preprocess(img)
+        magnitude, _, ndi = compute_fourier_spectrum(image_gray, dc_radius=dc_radius)
+        anisotropy_scores.append(ndi)
+
+        img_energy = []
+        for a in angles:
+            bin_mask = (np.abs(theta - a) <= 2) & mask_dc
+            img_energy.append(np.sum(magnitude[bin_mask]))
+        total_angular_energy += np.array(img_energy)
+
+    avg_angular_energy = total_angular_energy / len(filter_images)
+    if np.max(avg_angular_energy) > 0:
+        avg_angular_energy = avg_angular_energy / np.max(avg_angular_energy)
+
+    avg_anisotropy = np.mean(anisotropy_scores)
+    return angles, avg_angular_energy, avg_anisotropy
+
+
+def plot_fourier_cmap_grid(filter_data, models, layers, dc_radius=5, figsize=(14, 11), dpi=150):
+    """
+    Plots a grid (len(models) x len(layers)) of averaged 2D Fourier Log Magnitude Spectra (CMAP).
+    Prints a summary text table of Anisotropy Index (NDI) for each model & layer.
+    """
+    anisotropy_results = {m: {} for m in models}
+
+    fig, axs = plt.subplots(len(models), len(layers), figsize=figsize, dpi=dpi)
+    fig.suptitle("Layer-wise 2D Fourier Spectra Analysis & Anisotropy Index Metrics", fontsize=16, y=0.96)
+
+    for i, model_name in enumerate(models):
+        for j, layer_name in enumerate(layers):
+            images_list = filter_data[model_name][layer_name]
+
+            # Process structural metrics
+            avg_spectrum, anisotropy_index = analyze_layer_filters(images_list, dc_radius=dc_radius)
+            anisotropy_results[model_name][layer_name] = anisotropy_index
+
+            # Plot spectrum maps
+            ax = axs[i, j] if len(models) > 1 and len(layers) > 1 else (axs[i] if len(models) > 1 else axs[j])
+            im = ax.imshow(avg_spectrum, cmap='magma')
+            ax.set_title(f"Model: {model_name.upper()}\nFeatures.{layer_name}.Conv\n[AI Index: {anisotropy_index:.3f}]", fontsize=10)
+            ax.axis('off')
+
+            # Single colorbar anchor per row to prevent visual cluttering
+            if j == len(layers) - 1:
+                fig.colorbar(im, ax=ax, shrink=0.7, label='Log Spectral Intensity')
+
+    plt.tight_layout()
+    plt.subplots_adjust(top=0.88)
+    plt.show()
+
+    # Print out summary text table
+    print("\n" + "="*54)
+    print(f"{'LAYER CONFIGURATION':<25} | {'MODEL':<12} | {'ANISOTROPY INDEX':<10}")
+    print("="*54)
+    for l in layers:
+        for m in models:
+            score = anisotropy_results[m][l]
+            print(f"FEATURES.{l}.CONV{' ':<11} | {m:<12} | {score:.4f}")
+        print("-"*54)
+
+    return anisotropy_results
+
+
+def plot_fourier_angular_distribution_grid(filter_data, models, layers, dc_radius=5, figsize=(16, 11), dpi=150):
+    """
+    Plots a grid (len(models) x len(layers)) of averaged 1D Angular Energy Distributions.
+    Highlights Cardinal (0°/180°, 90°) and Oblique (45°, 135°) angular sectors.
+    Prints a summary text table of Anisotropy Index (NDI) for each model & layer.
+    """
+    anisotropy_results = {m: {} for m in models}
+
+    fig, axs = plt.subplots(len(models), len(layers), figsize=figsize, dpi=dpi)
+    fig.suptitle("Layer-wise 1D Angular Energy Distribution & Anisotropy Index Metrics", fontsize=16, y=0.96)
+
+    for i, model_name in enumerate(models):
+        for j, layer_name in enumerate(layers):
+            images_list = filter_data[model_name][layer_name]
+
+            angles, avg_angular_energy, anisotropy_index = compute_layer_angular_distribution(images_list, dc_radius=dc_radius)
+            anisotropy_results[model_name][layer_name] = anisotropy_index
+
+            ax = axs[i, j] if len(models) > 1 and len(layers) > 1 else (axs[i] if len(models) > 1 else axs[j])
+
+            # Plot 1D energy profile
+            ax.plot(angles, avg_angular_energy, color='darkgreen', lw=2)
+
+            # Highlight Cardinal (red) and Oblique (blue) sectors
+            ax.axvspan(0, 10, color='red', alpha=0.2, label='Cardinal (0°/180°)' if (i == 0 and j == 0) else "")
+            ax.axvspan(80, 100, color='red', alpha=0.2, label='Cardinal (90°)' if (i == 0 and j == 0) else "")
+            ax.axvspan(170, 180, color='red', alpha=0.2)
+
+            ax.axvspan(35, 55, color='blue', alpha=0.2, label='Oblique (45°)' if (i == 0 and j == 0) else "")
+            ax.axvspan(125, 145, color='blue', alpha=0.2, label='Oblique (135°)' if (i == 0 and j == 0) else "")
+
+            ax.set_xticks([0, 45, 90, 135, 180])
+            ax.set_xlim(0, 180)
+            ax.set_ylim(0, 1.05)
+            ax.set_title(f"Model: {model_name.upper()}\nFeatures.{layer_name}.Conv\n[AI Index: {anisotropy_index:.3f}]", fontsize=10)
+            ax.grid(True, linestyle='--', alpha=0.5)
+
+            if j == 0:
+                ax.set_ylabel("Norm. Energy", fontsize=9)
+            if i == len(models) - 1:
+                ax.set_xlabel("Angle θ (degrees)", fontsize=9)
+
+    # Add single legend for the figure
+    handles, labels = axs[0, 0].get_legend_handles_labels()
+    if handles:
+        fig.legend(handles, labels, loc='upper right', bbox_to_anchor=(0.99, 0.95), fontsize=9)
+
+    plt.tight_layout()
+    plt.subplots_adjust(top=0.88)
+    plt.show()
+
+    # Print out summary text table
+    print("\n" + "="*54)
+    print(f"{'LAYER CONFIGURATION':<25} | {'MODEL':<12} | {'ANISOTROPY INDEX':<10}")
+    print("="*54)
+    for l in layers:
+        for m in models:
+            score = anisotropy_results[m][l]
+            print(f"FEATURES.{l}.CONV{' ':<11} | {m:<12} | {score:.4f}")
+        print("-"*54)
+
+    return anisotropy_results
+
 
