@@ -1,17 +1,14 @@
 # %% [code]
-# %% [code]
-# %% [code]
-# %% [code]
-# %% [code]
-import numpy as np
-import torch
-import matplotlib.pyplot as plt
+from concurrent.futures import ThreadPoolExecutor
 
+import matplotlib.pyplot as plt
+from matplotlib.colors import LogNorm
+import numpy as np
+import scipy.ndimage
 from skimage.metrics import structural_similarity as ssim
+import torch
 import torch.nn.functional as F
 import torchvision.utils as vutils
-import scipy.ndimage
-from concurrent.futures import ThreadPoolExecutor
 
 
 # analyzing SIMM, mse, mae
@@ -232,13 +229,13 @@ def compute_rotational_anisotropy(image_data, dc_radius=5):
     _, log_mag, ndi = compute_fourier_spectrum(image_gray, dc_radius=dc_radius)
     return log_mag, ndi
 
-def plot_fourier_diagnostic(image_data, title="Fourier Diagnostic", dc_radius=5, figsize=(18, 4.5)):
+def plot_fourier_diagnostic(image_data, title="Fourier Diagnostic", dc_radius=5, log_scale=False, figsize=(18, 4.5)):
     """
     Generates a 4-panel visual diagnostic figure:
     1. Spatial Image (Circular Masked)
     2. Log Magnitude Fourier Spectrum
     3. Cardinal (Red) vs Oblique (Blue) Sector Overlay
-    4. 1D Angular Energy Distribution Plot across 0°, 45°, 90°, 135°, 180°
+    4. 1D Angular Energy Distribution Plot across 0°, 45°, 90°, 135°, 180° (with optional log_scale)
     """
     image_gray = _step1_preprocess(image_data)
     magnitude, log_mag, ndi = compute_fourier_spectrum(image_gray, dc_radius=dc_radius)
@@ -309,8 +306,17 @@ def plot_fourier_diagnostic(image_data, title="Fourier Diagnostic", dc_radius=5,
     
     axes[3].set_xticks([0, 45, 90, 135, 180])
     axes[3].set_xlim(0, 180)
+    
+    if log_scale:
+        axes[3].set_yscale('log')
+        pos_vals = angular_energy[angular_energy > 0]
+        min_pos = np.min(pos_vals) if len(pos_vals) > 0 else 1e-4
+        axes[3].set_ylim(bottom=max(1e-4, min_pos * 0.5), top=1.2)
+        axes[3].set_ylabel("Norm. Energy (Log Scale)", fontsize=9)
+    else:
+        axes[3].set_ylabel("Norm. Energy", fontsize=9)
+
     axes[3].set_xlabel("Angle θ (degrees)", fontsize=9)
-    axes[3].set_ylabel("Norm. Energy", fontsize=9)
     axes[3].set_title("Angular Energy Distribution", fontsize=11, fontweight='bold')
     axes[3].grid(True, linestyle='--', alpha=0.5)
     axes[3].legend(fontsize=7, loc='upper right')
@@ -380,9 +386,10 @@ def compute_layer_angular_distribution(filter_images, dc_radius=5):
     return angles, avg_angular_energy, avg_anisotropy
 
 
-def plot_fourier_cmap_grid(filter_data, models, layers, dc_radius=5, figsize=(14, 11), dpi=150):
+def plot_fourier_cmap_grid(filter_data, models, layers, dc_radius=5, log_scale=False, figsize=(14, 11), dpi=150):
     """
     Plots a grid (len(models) x len(layers)) of averaged 2D Fourier Log Magnitude Spectra (CMAP).
+    Optionally applies log-scale color normalization via log_scale=True.
     Prints a summary text table of Anisotropy Index (NDI) for each model & layer.
     """
     anisotropy_results = {m: {} for m in models}
@@ -400,7 +407,15 @@ def plot_fourier_cmap_grid(filter_data, models, layers, dc_radius=5, figsize=(14
 
             # Plot spectrum maps
             ax = axs[i, j] if len(models) > 1 and len(layers) > 1 else (axs[i] if len(models) > 1 else axs[j])
-            im = ax.imshow(avg_spectrum, cmap='magma')
+            
+            if log_scale:
+                pos_vals = avg_spectrum[avg_spectrum > 0]
+                vmin = np.min(pos_vals) if len(pos_vals) > 0 else 1e-4
+                norm = LogNorm(vmin=max(1e-4, vmin), vmax=max(np.max(avg_spectrum), vmin * 10))
+                im = ax.imshow(avg_spectrum, cmap='magma', norm=norm)
+            else:
+                im = ax.imshow(avg_spectrum, cmap='magma')
+
             ax.set_title(f"Model: {model_name.upper()}\nFeatures.{layer_name}.Conv\n[AI Index: {anisotropy_index:.3f}]", fontsize=10)
             ax.axis('off')
 
@@ -425,10 +440,11 @@ def plot_fourier_cmap_grid(filter_data, models, layers, dc_radius=5, figsize=(14
     return anisotropy_results
 
 
-def plot_fourier_angular_distribution_grid(filter_data, models, layers, dc_radius=5, figsize=(16, 11), dpi=150):
+def plot_fourier_angular_distribution_grid(filter_data, models, layers, dc_radius=5, log_scale=False, figsize=(16, 11), dpi=150):
     """
     Plots a grid (len(models) x len(layers)) of averaged 1D Angular Energy Distributions.
     Highlights Cardinal (0°/180°, 90°) and Oblique (45°, 135°) angular sectors.
+    Optionally sets Y-axis to logarithmic scale when log_scale=True.
     Prints a summary text table of Anisotropy Index (NDI) for each model & layer.
     """
     anisotropy_results = {m: {} for m in models}
@@ -458,12 +474,20 @@ def plot_fourier_angular_distribution_grid(filter_data, models, layers, dc_radiu
 
             ax.set_xticks([0, 45, 90, 135, 180])
             ax.set_xlim(0, 180)
-            ax.set_ylim(0, 1.05)
+
+            if log_scale:
+                ax.set_yscale('log')
+                pos_vals = avg_angular_energy[avg_angular_energy > 0]
+                min_pos = np.min(pos_vals) if len(pos_vals) > 0 else 1e-4
+                ax.set_ylim(bottom=max(1e-4, min_pos * 0.5), top=1.2)
+            else:
+                ax.set_ylim(0, 1.05)
+
             ax.set_title(f"Model: {model_name.upper()}\nFeatures.{layer_name}.Conv\n[AI Index: {anisotropy_index:.3f}]", fontsize=10)
             ax.grid(True, linestyle='--', alpha=0.5)
 
             if j == 0:
-                ax.set_ylabel("Norm. Energy", fontsize=9)
+                ax.set_ylabel("Norm. Energy (Log Scale)" if log_scale else "Norm. Energy", fontsize=9)
             if i == len(models) - 1:
                 ax.set_xlabel("Angle θ (degrees)", fontsize=9)
 
@@ -487,5 +511,6 @@ def plot_fourier_angular_distribution_grid(filter_data, models, layers, dc_radiu
         print("-"*54)
 
     return anisotropy_results
+
 
 
