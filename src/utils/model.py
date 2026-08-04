@@ -62,11 +62,11 @@ class PseudoAlexNet(nn.Module):
         # --- 2. THE CLASSIFICATION HEAD (All vector dense layers go here) ---
         self.classifier = nn.Sequential(
             nn.Dropout(p),
-            nn.Linear(int((1.0/self.tiny_factor)*32) * 37 * 25, 512),
-            nn.BatchNorm1d(512),
+            nn.Linear(int((1.0/self.tiny_factor)*32) * 37 * 25, 1024),
+            nn.BatchNorm1d(1024),
             nn.LeakyReLU(negative_slope=negative_slope),
             nn.Dropout(p),
-            nn.Linear(512, 101)
+            nn.Linear(1024, 101)
         )
 
         for layer in self.classifier:
