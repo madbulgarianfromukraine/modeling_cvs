@@ -440,11 +440,12 @@ def plot_fourier_cmap_grid(filter_data, models, layers, dc_radius=5, log_scale=F
     return anisotropy_results
 
 
-def plot_fourier_angular_distribution_grid(filter_data, models, layers, dc_radius=5, log_scale=False, figsize=(16, 11), dpi=150):
+def plot_fourier_angular_distribution_grid(filter_data, models, layers, dc_radius=5, log_scale=False, plot_differences=True, figsize=(16, 11), dpi=150):
     """
     Plots a grid (len(models) x len(layers)) of averaged 1D Angular Energy Distributions.
     Highlights Cardinal (0°/180°, 90°) and Oblique (45°, 135°) angular sectors.
     Optionally sets Y-axis to logarithmic scale when log_scale=True.
+    Optionally plots difference profiles (Fine-Tuned vs Natural, Screen vs Natural) when plot_differences=True.
     Prints a summary text table of Anisotropy Index (NDI) for each model & layer.
     """
     anisotropy_results = {m: {} for m in models}
@@ -510,7 +511,101 @@ def plot_fourier_angular_distribution_grid(filter_data, models, layers, dc_radiu
             print(f"FEATURES.{l}.CONV{' ':<11} | {m:<12} | {score:.4f}")
         print("-"*54)
 
+    if plot_differences and "natural" in filter_data:
+        plot_fourier_angular_difference_grid(filter_data, layers, dc_radius=dc_radius, dpi=dpi)
+
     return anisotropy_results
+
+
+def plot_fourier_angular_difference_grid(filter_data, layers, dc_radius=5, figsize=(16, 8), dpi=150):
+    """
+    Plots a grid (2 x len(layers)) of 1D Angular Energy Difference Profiles:
+    - Row 1: Fine-Tuned minus Natural (FT - NAT)
+    - Row 2: Screen (Scratch) minus Natural (SCR - NAT)
+
+    Highlights Cardinal (0°/180°, 90°) and Oblique (45°, 135°) angular sectors.
+    Includes a reference zero baseline (y=0) and shaded gain/loss areas.
+    Prints a summary text table of NDI scores and NDI shift (ΔNDI).
+    """
+    diff_pairs = [
+        ("fine-tuned", "natural", "Diff: FINE-TUNED - NATURAL"),
+        ("screen", "natural", "Diff: SCREEN - NATURAL")
+    ]
+
+    fig, axs = plt.subplots(len(diff_pairs), len(layers), figsize=figsize, dpi=dpi)
+    fig.suptitle("Layer-wise 1D Angular Energy Difference Profiles (Domain Drift Shift)", fontsize=16, y=0.96)
+
+    table_data = []
+
+    for i, (model_b_name, model_a_name, pair_title) in enumerate(diff_pairs):
+        for j, layer_name in enumerate(layers):
+            images_a = filter_data[model_a_name][layer_name]
+            images_b = filter_data[model_b_name][layer_name]
+
+            angles, energy_a, ndi_a = compute_layer_angular_distribution(images_a, dc_radius=dc_radius)
+            angles, energy_b, ndi_b = compute_layer_angular_distribution(images_b, dc_radius=dc_radius)
+
+            diff_energy = energy_b - energy_a
+            delta_ndi = ndi_b - ndi_a
+
+            table_data.append((layer_name, model_b_name.upper(), model_a_name.upper(), ndi_b, ndi_a, delta_ndi))
+
+            ax = axs[i, j] if len(diff_pairs) > 1 and len(layers) > 1 else (axs[i] if len(diff_pairs) > 1 else axs[j])
+
+            color = 'purple' if i == 0 else 'crimson'
+            ax.plot(angles, diff_energy, color=color, lw=2, label=f"Δ Energy ({model_b_name[:2].upper()} - {model_a_name[:3].upper()})")
+
+            # Reference baseline at y = 0
+            ax.axhline(0, color='black', linestyle='--', alpha=0.6, lw=1)
+
+            # Shaded positive (gain) and negative (loss) regions
+            ax.fill_between(angles, diff_energy, 0, where=(diff_energy >= 0), color=color, alpha=0.15)
+            ax.fill_between(angles, diff_energy, 0, where=(diff_energy < 0), color='gray', alpha=0.15)
+
+            # Highlight Cardinal (red) and Oblique (blue) sectors
+            ax.axvspan(0, 10, color='red', alpha=0.15, label='Cardinal (0°/180°)' if (i == 0 and j == 0) else "")
+            ax.axvspan(80, 100, color='red', alpha=0.15, label='Cardinal (90°)' if (i == 0 and j == 0) else "")
+            ax.axvspan(170, 180, color='red', alpha=0.15)
+
+            ax.axvspan(35, 55, color='blue', alpha=0.15, label='Oblique (45°)' if (i == 0 and j == 0) else "")
+            ax.axvspan(125, 145, color='blue', alpha=0.15, label='Oblique (135°)' if (i == 0 and j == 0) else "")
+
+            ax.set_xticks([0, 45, 90, 135, 180])
+            ax.set_xlim(0, 180)
+
+            # Symmetrical y-axis limits around 0
+            max_abs_diff = np.max(np.abs(diff_energy)) if len(diff_energy) > 0 else 0.5
+            ylim_val = max(0.1, max_abs_diff * 1.2)
+            ax.set_ylim(-ylim_val, +ylim_val)
+
+            ax.set_title(f"{pair_title}\nFeatures.{layer_name}.Conv\n[ΔNDI: {delta_ndi:+.3f}]", fontsize=10)
+            ax.grid(True, linestyle='--', alpha=0.5)
+
+            if j == 0:
+                ax.set_ylabel("Δ Norm. Energy", fontsize=9)
+            if i == len(diff_pairs) - 1:
+                ax.set_xlabel("Angle θ (degrees)", fontsize=9)
+
+    # Add single legend for the figure
+    handles, labels = axs[0, 0].get_legend_handles_labels()
+    if handles:
+        fig.legend(handles, labels, loc='upper right', bbox_to_anchor=(0.99, 0.95), fontsize=9)
+
+    plt.tight_layout()
+    plt.subplots_adjust(top=0.88)
+    plt.show()
+
+    # Print summary text table
+    print("\n" + "="*68)
+    print(f"{'LAYER':<16} | {'COMPARISON (B vs A)':<24} | {'NDI (B)':<9} | {'NDI (A)':<9} | {'Δ NDI':<8}")
+    print("="*68)
+    for l_name, m_b, m_a, n_b, n_a, d_ndi in table_data:
+        comp_str = f"{m_b} vs {m_a}"
+        print(f"FEATURES.{l_name}.CONV | {comp_str:<24} | {n_b:9.4f} | {n_a:9.4f} | {d_ndi:+8.4f}")
+        print("-" * 68)
+
+    return table_data
+
 
 
 
