@@ -86,7 +86,8 @@ def train_and_eval_epoch(epoch, model, train_loader, val_loader,
                          checkpoint_dir, stage_name: str = "nat_images", bn_eval: bool = False, 
                          augmenter: Optional[nn.Module] = None,
                          cutmix: Optional[nn.Module] = None,
-                         cutmix_prob: float = 0.5) -> Tuple[float, Optional[float]]:
+                         cutmix_prob: float = 0.5,
+                         save_intermediate_checkpoints: bool = False) -> Tuple[float, Optional[float]]:
     epoch_start_time = time.time()
 
     model.train()
@@ -159,7 +160,7 @@ def train_and_eval_epoch(epoch, model, train_loader, val_loader,
     print(f'\n--- Epoch {epoch} Evaluation ---')
     print(f'Validation set: Average Loss: {avg_val_loss:.6f}, Accuracy: {val_accuracy:.2f}%\n')
 
-    if epoch % 10 == 0:
+    if save_intermediate_checkpoints and (epoch % 10 == 0):
         file_name = f"after_{epoch}_{stage_name}"
         save_checkpoint(model, optimizer, epoch, avg_train_loss, path=checkpoint_dir, file_name=file_name)
 
@@ -186,7 +187,9 @@ def train_model_stages(
     bn_eval: bool = False,
     augmenter: Optional[nn.Module] = None,
     cutmix: Optional[nn.Module] = None,
-    cutmix_prob: float = 0.5
+    cutmix_prob: float = 0.5,
+    save_intermediate_checkpoints: bool = False,
+    checkpoint_file_name: Optional[str] = None
 ):
     print(f"=== Training on the {stage_name} ===")
 
@@ -216,7 +219,8 @@ def train_model_stages(
             bn_eval=bn_eval,
             augmenter=augmenter,
             cutmix=cutmix,
-            cutmix_prob=cutmix_prob
+            cutmix_prob=cutmix_prob,
+            save_intermediate_checkpoints=save_intermediate_checkpoints
         )
 
         train_loss_history.append(train_loss)
@@ -241,8 +245,9 @@ def train_model_stages(
             if best_model_state is not None:
                 model.load_state_dict(best_model_state)
                 print(">>> Restored best model weights <<<")
+            final_name = checkpoint_file_name if checkpoint_file_name else f"finished_{stage_name}"
             save_checkpoint(model=model, optimizer=optimizer, epoch=epoch, loss=best_val_loss,
-                            path=checkpoint_dir, file_name=f"finished_{stage_name}")
+                            path=checkpoint_dir, file_name=final_name)
             break
 
         # Check maximum epoch condition
@@ -250,8 +255,9 @@ def train_model_stages(
             if best_model_state is not None:
                 model.load_state_dict(best_model_state)
                 print(">>> Restored best model weights <<<")
+            final_name = checkpoint_file_name if checkpoint_file_name else f"finished_{stage_name}_max_epochs"
             save_checkpoint(model=model, optimizer=optimizer, epoch=epoch, loss=best_val_loss,
-                            path=checkpoint_dir, file_name=f"finished_{stage_name}_max_epochs")
+                            path=checkpoint_dir, file_name=final_name)
 
     # Ensure best weights are loaded back into the model at the end of training
     if best_model_state is not None:
