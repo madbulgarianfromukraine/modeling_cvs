@@ -121,7 +121,7 @@ def stratified_three_way_split(dataset: Dataset, train_ratio: float, test_ratio:
     # 2. Format targets and cast to a NumPy array to allow easy advanced indexing later
     if torch.is_tensor(targets):
         targets = targets.cpu().numpy()
-    elif isinstance(targets, list) and torch.is_tensor(targets[0]):
+    elif isinstance(targets, list) and len(targets) > 0 and torch.is_tensor(targets[0]):
         targets = np.array([t.item() for t in targets])
     else:
         targets = np.array(targets)

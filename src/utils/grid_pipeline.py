@@ -150,71 +150,102 @@ def setup_model_device(model: nn.Module, device: torch.device, use_data_parallel
 # 2. MODULAR DATA PREPARATION PIECES (CALTECH101 & ENRICO)
 # ==============================================================================
 
+import threading
+
+CALTECH_LOCK = threading.Lock()
+ENRICO_LOCK = threading.Lock()
+
+_CALTECH_CACHE: Dict[Tuple[str, int], Dict[str, Any]] = {}
+_ENRICO_CACHE: Dict[Tuple[str, bool, int], Dict[str, Any]] = {}
+
+
 def prepare_caltech_dataloaders(
     caltech_root: str,
     batch_size: int = 128
 ) -> Dict[str, Any]:
     """
     Prepares DataLoaders and augmentation pipelines for Caltech101 (natural images pre-training).
+    Includes thread locking and error handling to prevent multi-GPU download race conditions or corrupted archives.
     """
-    os.makedirs(caltech_root, exist_ok=True)
-    caltech_base_dataset = datasets.Caltech101(root=caltech_root, download=True)
-    
-    caltech_train_raw, caltech_val_raw, caltech_test_raw = stratified_three_way_split(
-        dataset=caltech_base_dataset,
-        train_ratio=0.8,
-        val_ratio=0.1,
-        test_ratio=0.1,
-    )
+    cache_key = (caltech_root, batch_size)
+    with CALTECH_LOCK:
+        if cache_key in _CALTECH_CACHE:
+            return _CALTECH_CACHE[cache_key]
 
-    caltech_preprocess = make_caltech_base_transform(resize=(300, 200))
-    caltech_train_raw_loader = torch.utils.data.DataLoader(
-        AugmentationWrapper(caltech_train_raw, caltech_preprocess),
-        batch_size=batch_size,
-        shuffle=False,
-        num_workers=3,
-    )
-    
-    caltech_train_mean, caltech_train_std = mean_and_std_for_normalization(caltech_train_raw_loader)
+        os.makedirs(caltech_root, exist_ok=True)
+        try:
+            caltech_base_dataset = datasets.Caltech101(root=caltech_root, download=True)
+        except Exception as e:
+            print(f"⚠️ Caltech101 download error: {e}. Recovering by purging partial archives...")
+            import shutil
+            for name in ["101_ObjectCategories.tar.gz", "101_ObjectCategories"]:
+                target_path = os.path.join(caltech_root, "caltech101", name)
+                if os.path.isfile(target_path):
+                    try:
+                        os.remove(target_path)
+                    except Exception:
+                        pass
+                elif os.path.isdir(target_path):
+                    shutil.rmtree(target_path, ignore_errors=True)
+            caltech_base_dataset = datasets.Caltech101(root=caltech_root, download=True)
+        
+        caltech_train_raw, caltech_val_raw, caltech_test_raw = stratified_three_way_split(
+            dataset=caltech_base_dataset,
+            train_ratio=0.8,
+            val_ratio=0.1,
+            test_ratio=0.1,
+        )
 
-    nat_images_train, nat_images_val, nat_images_test = build_caltech_split_datasets(
-        train_subset=caltech_train_raw,
-        val_subset=caltech_val_raw,
-        test_subset=caltech_test_raw,
-        mean=caltech_train_mean,
-        std=caltech_train_std,
-        transforms_augmented_list=None,
-        resize=(300, 200),
-    )
+        caltech_preprocess = make_caltech_base_transform(resize=(300, 200))
+        caltech_train_raw_loader = torch.utils.data.DataLoader(
+            AugmentationWrapper(caltech_train_raw, caltech_preprocess),
+            batch_size=batch_size,
+            shuffle=False,
+            num_workers=3,
+        )
+        
+        caltech_train_mean, caltech_train_std = mean_and_std_for_normalization(caltech_train_raw_loader)
 
-    train_loader = torch.utils.data.DataLoader(
-        nat_images_train, batch_size=batch_size, shuffle=True, num_workers=3
-    )
-    val_loader = torch.utils.data.DataLoader(
-        nat_images_val, batch_size=batch_size, shuffle=False, num_workers=3
-    )
-    test_loader = torch.utils.data.DataLoader(
-        nat_images_test, batch_size=batch_size, shuffle=False, num_workers=3
-    )
+        nat_images_train, nat_images_val, nat_images_test = build_caltech_split_datasets(
+            train_subset=caltech_train_raw,
+            val_subset=caltech_val_raw,
+            test_subset=caltech_test_raw,
+            mean=caltech_train_mean,
+            std=caltech_train_std,
+            transforms_augmented_list=None,
+            resize=(300, 200),
+        )
 
-    gpu_augmentations = v2.Compose([
-        v2.RandomResizedCrop(size=(300, 200), scale=(0.4, 1.0)),
-        v2.ColorJitter(),
-        v2.RandomErasing(p=0.5),
-        K.RandomHorizontalFlip(p=0.5),
-        K.RandomElasticTransform(p=0.3, kernel_size=(63, 63), sigma=(32.0, 32.0), keepdim=True),
-        K.RandomBoxBlur(p=0.2, keepdim=True),
-    ])
-    cutmix = v2.CutMix(num_classes=101)
+        train_loader = torch.utils.data.DataLoader(
+            nat_images_train, batch_size=batch_size, shuffle=True, num_workers=3
+        )
+        val_loader = torch.utils.data.DataLoader(
+            nat_images_val, batch_size=batch_size, shuffle=False, num_workers=3
+        )
+        test_loader = torch.utils.data.DataLoader(
+            nat_images_test, batch_size=batch_size, shuffle=False, num_workers=3
+        )
 
-    return {
-        "train_loader": train_loader,
-        "val_loader": val_loader,
-        "test_loader": test_loader,
-        "gpu_augmentations": gpu_augmentations,
-        "cutmix": cutmix,
-        "num_classes": 101
-    }
+        gpu_augmentations = v2.Compose([
+            v2.RandomResizedCrop(size=(300, 200), scale=(0.4, 1.0)),
+            v2.ColorJitter(),
+            v2.RandomErasing(p=0.5),
+            K.RandomHorizontalFlip(p=0.5),
+            K.RandomElasticTransform(p=0.3, kernel_size=(63, 63), sigma=(32.0, 32.0), keepdim=True),
+            K.RandomBoxBlur(p=0.2, keepdim=True),
+        ])
+        cutmix = v2.CutMix(num_classes=101)
+
+        result = {
+            "train_loader": train_loader,
+            "val_loader": val_loader,
+            "test_loader": test_loader,
+            "gpu_augmentations": gpu_augmentations,
+            "cutmix": cutmix,
+            "num_classes": 101
+        }
+        _CALTECH_CACHE[cache_key] = result
+        return result
 
 
 def prepare_enrico_dataloaders(
@@ -224,65 +255,73 @@ def prepare_enrico_dataloaders(
 ) -> Dict[str, Any]:
     """
     Prepares normalized DataLoaders and data augmentation pipelines for the Enrico dataset.
+    Includes thread locking and caching to prevent multi-GPU race conditions.
     """
-    screen_preprocess = make_screen_base_transform(resize=(300, 200))
-    screen_train_raw, screen_val_raw, screen_test_raw = CustomEnricoDataset.create_splits(
-        root=enrico_root,
-        val_size=0.1,
-        test_size=0.1,
-        use_wireframes=use_wireframes,
-        train_transform=screen_preprocess,
-        eval_transform=screen_preprocess
-    )
+    cache_key = (enrico_root, use_wireframes, batch_size)
+    with ENRICO_LOCK:
+        if cache_key in _ENRICO_CACHE:
+            return _ENRICO_CACHE[cache_key]
 
-    enrico_classes = len(get_allowed_classes())
-    screen_raw_loader = torch.utils.data.DataLoader(
-        screen_train_raw, batch_size=batch_size, shuffle=False, pin_memory=True, num_workers=3
-    )
-    screen_train_mean, screen_train_std = mean_and_std_for_normalization(screen_raw_loader)
+        screen_preprocess = make_screen_base_transform(resize=(300, 200))
+        screen_train_raw, screen_val_raw, screen_test_raw = CustomEnricoDataset.create_splits(
+            root=enrico_root,
+            val_size=0.1,
+            test_size=0.1,
+            use_wireframes=use_wireframes,
+            train_transform=screen_preprocess,
+            eval_transform=screen_preprocess
+        )
 
-    universal_base_screen = v2.Compose([
-        screen_preprocess,
-        v2.Normalize(mean=screen_train_mean, std=screen_train_std, inplace=False)
-    ])
+        enrico_classes = len(get_allowed_classes())
+        screen_raw_loader = torch.utils.data.DataLoader(
+            screen_train_raw, batch_size=batch_size, shuffle=False, pin_memory=True, num_workers=3
+        )
+        screen_train_mean, screen_train_std = mean_and_std_for_normalization(screen_raw_loader)
 
-    train_ds, val_ds, test_ds = CustomEnricoDataset.create_splits(
-        root=enrico_root,
-        val_size=0.1,
-        test_size=0.1,
-        use_wireframes=use_wireframes,
-        train_transform=universal_base_screen,
-        eval_transform=universal_base_screen
-    )
+        universal_base_screen = v2.Compose([
+            screen_preprocess,
+            v2.Normalize(mean=screen_train_mean, std=screen_train_std, inplace=False)
+        ])
 
-    train_loader = torch.utils.data.DataLoader(
-        train_ds, batch_size=batch_size, shuffle=True, pin_memory=True, num_workers=3
-    )
-    val_loader = torch.utils.data.DataLoader(
-        val_ds, batch_size=batch_size, shuffle=False, pin_memory=True, num_workers=3
-    )
-    test_loader = torch.utils.data.DataLoader(
-        test_ds, batch_size=batch_size, shuffle=False, pin_memory=True, num_workers=3
-    )
+        train_ds, val_ds, test_ds = CustomEnricoDataset.create_splits(
+            root=enrico_root,
+            val_size=0.1,
+            test_size=0.1,
+            use_wireframes=use_wireframes,
+            train_transform=universal_base_screen,
+            eval_transform=universal_base_screen
+        )
 
-    gpu_augmentations = v2.Compose([
-        v2.RandomResizedCrop(size=(300, 200), scale=(0.4, 1.0)),
-        v2.ColorJitter(),
-        v2.RandomErasing(p=0.5),
-        K.RandomHorizontalFlip(p=0.5),
-        K.RandomElasticTransform(p=0.3, kernel_size=(63, 63), sigma=(32.0, 32.0), keepdim=True),
-        K.RandomBoxBlur(p=0.2, keepdim=True),
-    ])
-    cutmix = v2.CutMix(num_classes=enrico_classes)
+        train_loader = torch.utils.data.DataLoader(
+            train_ds, batch_size=batch_size, shuffle=True, pin_memory=True, num_workers=3
+        )
+        val_loader = torch.utils.data.DataLoader(
+            val_ds, batch_size=batch_size, shuffle=False, pin_memory=True, num_workers=3
+        )
+        test_loader = torch.utils.data.DataLoader(
+            test_ds, batch_size=batch_size, shuffle=False, pin_memory=True, num_workers=3
+        )
 
-    return {
-        "train_loader": train_loader,
-        "val_loader": val_loader,
-        "test_loader": test_loader,
-        "gpu_augmentations": gpu_augmentations,
-        "cutmix": cutmix,
-        "num_classes": enrico_classes
-    }
+        gpu_augmentations = v2.Compose([
+            v2.RandomResizedCrop(size=(300, 200), scale=(0.4, 1.0)),
+            v2.ColorJitter(),
+            v2.RandomErasing(p=0.5),
+            K.RandomHorizontalFlip(p=0.5),
+            K.RandomElasticTransform(p=0.3, kernel_size=(63, 63), sigma=(32.0, 32.0), keepdim=True),
+            K.RandomBoxBlur(p=0.2, keepdim=True),
+        ])
+        cutmix = v2.CutMix(num_classes=enrico_classes)
+
+        result = {
+            "train_loader": train_loader,
+            "val_loader": val_loader,
+            "test_loader": test_loader,
+            "gpu_augmentations": gpu_augmentations,
+            "cutmix": cutmix,
+            "num_classes": enrico_classes
+        }
+        _ENRICO_CACHE[cache_key] = result
+        return result
 
 
 # ==============================================================================
