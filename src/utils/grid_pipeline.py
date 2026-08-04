@@ -4,10 +4,12 @@ import time
 import copy
 import warnings
 from typing import Dict, List, Tuple, Optional, Any
+import concurrent.futures
 
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import torch.multiprocessing as mp
 from torchvision import datasets
 from torchvision.transforms import v2
 import kornia.augmentation as K
@@ -17,7 +19,12 @@ from evaluation import evaluate_model
 from fine_tuning import initial_freeze_unfreeze, second_unfreeze, reset_head_last_fc
 from model import PseudoAlexNet, DEVICE
 from screen_images import CustomEnricoDataset, get_allowed_classes, make_screen_base_transform
-from natural_images import make_caltech_base_transform, stratified_three_way_split, AugmentationWrapper
+from natural_images import (
+    make_caltech_base_transform,
+    stratified_three_way_split,
+    AugmentationWrapper,
+    build_caltech_split_datasets
+)
 from dataset_utils import push_checkpoints_to_kaggle_dataset, trigger_kaggle_notebook, get_labels
 
 try:
@@ -31,8 +38,8 @@ except ImportError:
 # 1. GRID SEARCH PARAMETER DEFINITIONS (3x3 Grid = 9 Possible Configurations)
 # ==============================================================================
 
-GRID_LR_NAT = [1e-3, 5e-3, 1e-2]       # Pretraining on Natural images
-GRID_LR_WARMUP = [1e-6, 1e-5, 1e-4]    # Stage 1: Warmup fine-tuning
+GRID_LR_NAT = [1e-3, 5e-3, 1e-2]       # Pretraining on Natural images (Caltech101)
+GRID_LR_WARMUP = [1e-6, 1e-5, 1e-4]    # Stage 1: Warmup fine-tuning (classifier head)
 GRID_LR_DRIFT = [1e-5, 5e-5, 1e-4]     # Stage 2: Full unfreeze / Drift fine-tuning
 
 # Differential layer-wise learning rates (Early features, Late features, Head)
@@ -86,7 +93,10 @@ def create_differential_optimizer(
     """
     early_params, late_params, head_params = [], [], []
 
-    for name, param in model.named_parameters():
+    # Unwrap DataParallel if present
+    target_model = model.module if isinstance(model, nn.DataParallel) else model
+
+    for name, param in target_model.named_parameters():
         if not param.requires_grad:
             continue
         if "features.0" in name or "features.1" in name:
@@ -104,7 +114,7 @@ def create_differential_optimizer(
 
     base_optimizer = optim.AdamW(param_groups, eps=eps)
     if use_sam and HAS_SAM:
-        return SAM(model.parameters(), base_optimizer, rho=rho)
+        return SAM(target_model.parameters(), base_optimizer, rho=rho)
     return base_optimizer
 
 
@@ -115,9 +125,97 @@ def resolve_dataset_root(candidates: List[str], default_path: str) -> str:
     return default_path
 
 
+def get_available_cuda_devices() -> List[torch.device]:
+    """
+    Returns a list of available CUDA devices (e.g. [cuda:0, cuda:1]) or [cpu].
+    """
+    if torch.cuda.is_available():
+        count = torch.cuda.device_count()
+        return [torch.device(f"cuda:{i}") for i in range(count)]
+    return [torch.device("cpu")]
+
+
+def setup_model_device(model: nn.Module, device: torch.device, use_data_parallel: bool = True) -> nn.Module:
+    """
+    Moves model to the designated device and optionally wraps with DataParallel if multi-GPU is available.
+    """
+    model = model.to(device)
+    if use_data_parallel and torch.cuda.is_available() and torch.cuda.device_count() > 1:
+        if device.type == "cuda" and (device.index is None or device.index == 0):
+            model = nn.DataParallel(model)
+    return model
+
+
 # ==============================================================================
-# 2. MODULAR DATA PREPARATION PIECES
+# 2. MODULAR DATA PREPARATION PIECES (CALTECH101 & ENRICO)
 # ==============================================================================
+
+def prepare_caltech_dataloaders(
+    caltech_root: str,
+    batch_size: int = 128
+) -> Dict[str, Any]:
+    """
+    Prepares DataLoaders and augmentation pipelines for Caltech101 (natural images pre-training).
+    """
+    os.makedirs(caltech_root, exist_ok=True)
+    caltech_base_dataset = datasets.Caltech101(root=caltech_root, download=True)
+    
+    caltech_train_raw, caltech_val_raw, caltech_test_raw = stratified_three_way_split(
+        dataset=caltech_base_dataset,
+        train_ratio=0.8,
+        val_ratio=0.1,
+        test_ratio=0.1,
+    )
+
+    caltech_preprocess = make_caltech_base_transform(resize=(300, 200))
+    caltech_train_raw_loader = torch.utils.data.DataLoader(
+        AugmentationWrapper(caltech_train_raw, caltech_preprocess),
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=3,
+    )
+    
+    caltech_train_mean, caltech_train_std = mean_and_std_for_normalization(caltech_train_raw_loader)
+
+    nat_images_train, nat_images_val, nat_images_test = build_caltech_split_datasets(
+        train_subset=caltech_train_raw,
+        val_subset=caltech_val_raw,
+        test_subset=caltech_test_raw,
+        mean=caltech_train_mean,
+        std=caltech_train_std,
+        transforms_augmented_list=None,
+        resize=(300, 200),
+    )
+
+    train_loader = torch.utils.data.DataLoader(
+        nat_images_train, batch_size=batch_size, shuffle=True, num_workers=3
+    )
+    val_loader = torch.utils.data.DataLoader(
+        nat_images_val, batch_size=batch_size, shuffle=False, num_workers=3
+    )
+    test_loader = torch.utils.data.DataLoader(
+        nat_images_test, batch_size=batch_size, shuffle=False, num_workers=3
+    )
+
+    gpu_augmentations = v2.Compose([
+        v2.RandomResizedCrop(size=(300, 200), scale=(0.4, 1.0)),
+        v2.ColorJitter(),
+        v2.RandomErasing(p=0.5),
+        K.RandomHorizontalFlip(p=0.5),
+        K.RandomElasticTransform(p=0.3, kernel_size=(63, 63), sigma=(32.0, 32.0), keepdim=True),
+        K.RandomBoxBlur(p=0.2, keepdim=True),
+    ])
+    cutmix = v2.CutMix(num_classes=101)
+
+    return {
+        "train_loader": train_loader,
+        "val_loader": val_loader,
+        "test_loader": test_loader,
+        "gpu_augmentations": gpu_augmentations,
+        "cutmix": cutmix,
+        "num_classes": 101
+    }
+
 
 def prepare_enrico_dataloaders(
     enrico_root: str,
@@ -188,8 +286,71 @@ def prepare_enrico_dataloaders(
 
 
 # ==============================================================================
-# 3. MODULAR TRAINING & FINE-TUNING PIECES
+# 3. MODULAR TRAINING STAGES (PRE-TRAINING, FINE-TUNING, SCREEN SCRATCH)
 # ==============================================================================
+
+def train_natural_pretraining_stage(
+    model: nn.Module,
+    cfg: Dict[str, Any],
+    config_tag: str,
+    caltech_loaders: Dict[str, Any],
+    loss_fn: nn.Module,
+    device: torch.device,
+    max_nat_epochs: int,
+    checkpoint_dir: str,
+    patience: int = 5,
+    save_intermediate_checkpoints: bool = False
+) -> Dict[str, Any]:
+    """
+    Executes pre-training stage on Caltech101 natural images dataset.
+    """
+    train_loader = caltech_loaders["train_loader"]
+    val_loader = caltech_loaders["val_loader"]
+    test_loader = caltech_loaders["test_loader"]
+    gpu_aug = caltech_loaders["gpu_augmentations"]
+    cutmix = caltech_loaders["cutmix"]
+
+    target_model = model.module if isinstance(model, nn.DataParallel) else model
+    base_optimizer = optim.AdamW(target_model.parameters(), lr=cfg["lr_nat"], eps=1e-5, weight_decay=1e-3)
+    optimizer = SAM(target_model.parameters(), base_optimizer, rho=0.05) if HAS_SAM else base_optimizer
+
+    ckpt_nat_name = f"finished_nat_images_{config_tag}"
+    train_nat_loss, val_nat_loss = train_model_stages(
+        model=model,
+        train_loader=train_loader,
+        val_loader=val_loader,
+        optimizer=optimizer,
+        loss_fn=loss_fn,
+        device=device,
+        max_epochs=max_nat_epochs,
+        stage_name=f"nat_images_{config_tag}",
+        patience=patience,
+        checkpoint_dir=checkpoint_dir,
+        augmenter=gpu_aug,
+        cutmix=cutmix,
+        cutmix_prob=0.5,
+        save_intermediate_checkpoints=save_intermediate_checkpoints,
+        checkpoint_file_name=ckpt_nat_name
+    )
+
+    nat_test_loss, nat_test_acc = evaluate_model(model, test_loader, loss_fn, device)
+
+    plot_learning_curves(
+        train_losses=train_nat_loss,
+        val_losses=val_nat_loss,
+        log_scale=True,
+        save_to_csv=True,
+        stage=f"nat_images_{config_tag}"
+    )
+
+    return {
+        "train_loss": train_nat_loss,
+        "val_loss": val_nat_loss,
+        "test_loss": nat_test_loss,
+        "test_acc": nat_test_acc,
+        "checkpoint": os.path.join(checkpoint_dir, f"{ckpt_nat_name}.pth")
+    }
+
 
 def train_fine_tuning_stages(
     model: nn.Module,
@@ -201,11 +362,12 @@ def train_fine_tuning_stages(
     max_warmup_epochs: int,
     max_drift_epochs: int,
     checkpoint_dir: str,
+    patience: int = 5,
     save_intermediate_checkpoints: bool = False,
     use_differential_lr: bool = False
 ) -> Dict[str, Any]:
     """
-    Executes fine-tuning across Stage 1 (Warmup on head) and Stage 2 (Drift on full model).
+    Executes fine-tuning across Stage 1 (Warmup on classifier head) and Stage 2 (Drift on full model).
     """
     num_classes = enrico_loaders["num_classes"]
     train_loader = enrico_loaders["train_loader"]
@@ -214,18 +376,20 @@ def train_fine_tuning_stages(
     gpu_aug = enrico_loaders["gpu_augmentations"]
     cutmix = enrico_loaders["cutmix"]
 
+    target_model = model.module if isinstance(model, nn.DataParallel) else model
+
     # --- Stage 1: Warmup (Classifier head only) ---
-    reset_head_last_fc(model, output_features=num_classes)
-    model = model.to(device)
-    initial_freeze_unfreeze(model=model)
+    reset_head_last_fc(target_model, output_features=num_classes)
+    model = setup_model_device(model, device)
+    initial_freeze_unfreeze(model=target_model)
 
     if use_differential_lr:
         opt_warmup = create_differential_optimizer(
-            model, lr_early=cfg["lr_early"], lr_late=cfg["lr_late"], lr_head=cfg["lr_head"]
+            target_model, lr_early=cfg["lr_early"], lr_late=cfg["lr_late"], lr_head=cfg["lr_head"]
         )
     else:
-        base_opt_warmup = optim.AdamW(model.parameters(), lr=cfg["lr_warmup"], eps=1e-5, weight_decay=1e-3)
-        opt_warmup = SAM(model.parameters(), base_opt_warmup, rho=0.05) if HAS_SAM else base_opt_warmup
+        base_opt_warmup = optim.AdamW(target_model.parameters(), lr=cfg["lr_warmup"], eps=1e-5, weight_decay=1e-3)
+        opt_warmup = SAM(target_model.parameters(), base_opt_warmup, rho=0.05) if HAS_SAM else base_opt_warmup
 
     ckpt_warmup_name = f"finished_warmup_2_{config_tag}"
     train_warmup_loss, val_warmup_loss = train_model_stages(
@@ -237,7 +401,7 @@ def train_fine_tuning_stages(
         device=device,
         max_epochs=max_warmup_epochs,
         stage_name=f"warmup_2_{config_tag}",
-        patience=max_warmup_epochs,
+        patience=patience,
         checkpoint_dir=checkpoint_dir,
         augmenter=gpu_aug,
         cutmix=cutmix,
@@ -247,15 +411,15 @@ def train_fine_tuning_stages(
     )
 
     # --- Stage 2: Drift (Unfreeze full model) ---
-    second_unfreeze(model=model)
+    second_unfreeze(model=target_model)
 
     if use_differential_lr:
         opt_drift = create_differential_optimizer(
-            model, lr_early=cfg["lr_early"], lr_late=cfg["lr_late"], lr_head=cfg["lr_head"]
+            target_model, lr_early=cfg["lr_early"], lr_late=cfg["lr_late"], lr_head=cfg["lr_head"]
         )
     else:
-        base_opt_drift = optim.AdamW(model.parameters(), lr=cfg["lr_drift"], eps=1e-5, weight_decay=1e-3)
-        opt_drift = SAM(model.parameters(), base_opt_drift, rho=0.05) if HAS_SAM else base_opt_drift
+        base_opt_drift = optim.AdamW(target_model.parameters(), lr=cfg["lr_drift"], eps=1e-5, weight_decay=1e-3)
+        opt_drift = SAM(target_model.parameters(), base_opt_drift, rho=0.05) if HAS_SAM else base_opt_drift
 
     ckpt_drift_name = f"finished_drift_2_{config_tag}"
     train_drift_loss, val_drift_loss = train_model_stages(
@@ -267,7 +431,7 @@ def train_fine_tuning_stages(
         device=device,
         max_epochs=max_drift_epochs,
         stage_name=f"drift_2_{config_tag}",
-        patience=max_drift_epochs,
+        patience=patience,
         checkpoint_dir=checkpoint_dir,
         augmenter=gpu_aug,
         cutmix=cutmix,
@@ -308,6 +472,7 @@ def train_screen_scratch_stage(
     p_dropout: float,
     max_screen_epochs: int,
     checkpoint_dir: str,
+    patience: int = 5,
     save_intermediate_checkpoints: bool = False
 ) -> Dict[str, Any]:
     """
@@ -323,10 +488,11 @@ def train_screen_scratch_stage(
 
     model_scratch = PseudoAlexNet(tiny_factor=tiny_factor, p=p_dropout)
     reset_head_last_fc(model_scratch, output_features=num_classes)
-    model_scratch = model_scratch.to(device)
+    model_scratch = setup_model_device(model_scratch, device)
+    target_scratch = model_scratch.module if isinstance(model_scratch, nn.DataParallel) else model_scratch
 
-    base_opt_scratch = optim.AdamW(model_scratch.parameters(), lr=cfg["lr_drift"], eps=1e-5, weight_decay=1e-3)
-    opt_scratch = SAM(model_scratch.parameters(), base_opt_scratch, rho=0.05) if HAS_SAM else base_opt_scratch
+    base_opt_scratch = optim.AdamW(target_scratch.parameters(), lr=cfg["lr_drift"], eps=1e-5, weight_decay=1e-3)
+    opt_scratch = SAM(target_scratch.parameters(), base_opt_scratch, rho=0.05) if HAS_SAM else base_opt_scratch
 
     ckpt_scratch_name = f"finished_screen_{config_tag}"
     train_scratch_loss, val_scratch_loss = train_model_stages(
@@ -338,7 +504,7 @@ def train_screen_scratch_stage(
         device=device,
         max_epochs=max_screen_epochs,
         stage_name=f"screen_{config_tag}",
-        patience=max_screen_epochs,
+        patience=patience,
         checkpoint_dir=checkpoint_dir,
         augmenter=gpu_aug,
         cutmix=cutmix,
@@ -367,7 +533,7 @@ def train_screen_scratch_stage(
 
 
 # ==============================================================================
-# 4. MAIN EXPERIMENT ORCHESTRATOR & GRID SEARCH LOOP
+# 4. MAIN EXPERIMENT ORCHESTRATOR & PARALLEL MULTI-GPU GRID SEARCH LOOP
 # ==============================================================================
 
 def run_fine_tuning_experiment(
@@ -382,6 +548,7 @@ def run_fine_tuning_experiment(
     max_warmup_epochs: int = 15,
     max_drift_epochs: int = 40,
     max_screen_epochs: int = 50,
+    patience: int = 5,
     checkpoint_dir: str = "/kaggle/working/",
     enrico_root: Optional[str] = None,
     caltech_root: Optional[str] = None,
@@ -390,7 +557,10 @@ def run_fine_tuning_experiment(
     run_screen_from_scratch: bool = True
 ) -> Dict[str, Any]:
     """
-    Main experiment orchestrator breaking down data preparation, fine-tuning, and scratch training.
+    Main experiment pipeline executing:
+      1. Caltech101 Natural Images Pre-training
+      2. Enrico Screen Images Fine-Tuning (Warmup + Drift)
+      3. Enrico Screen Images Scratch Benchmark
     """
     if device is None:
         device = DEVICE
@@ -401,6 +571,8 @@ def run_fine_tuning_experiment(
 
     print(f"\n=======================================================")
     print(f"🚀 RUNNING EXPERIMENT CONFIG: [{grid_i}, {grid_j}] ({config_tag})")
+    print(f"   Target Device = {device}")
+    print(f"   patience = {patience}")
     print(f"   use_wireframes = {use_wireframes}")
     print(f"   save_intermediate_checkpoints = {save_intermediate_checkpoints}")
     print(f"   lr_nat = {cfg['lr_nat']}, lr_warmup = {cfg['lr_warmup']}, lr_drift = {cfg['lr_drift']}")
@@ -413,17 +585,43 @@ def run_fine_tuning_experiment(
             "./data/enricoscreenshotsandwireframes"
         ], "./data/enricoscreenshotsandwireframes")
 
-    # Step 1: Data preparation piece
+    if caltech_root is None:
+        caltech_root = resolve_dataset_root([
+            "/kaggle/input/caltech101",
+            "/kaggle/input/datasets/nazariyyuchnovskiy/caltech101",
+            "./data"
+        ], "./data")
+
+    loss_fn = nn.CrossEntropyLoss(label_smoothing=0.1)
+
+    # --- Step 1: Caltech101 Natural Images Pre-training ---
+    caltech_loaders = prepare_caltech_dataloaders(
+        caltech_root=caltech_root,
+        batch_size=batch_size
+    )
+    model = PseudoAlexNet(tiny_factor=tiny_factor, p=p_dropout)
+    model = setup_model_device(model, device)
+
+    nat_results = train_natural_pretraining_stage(
+        model=model,
+        cfg=cfg,
+        config_tag=config_tag,
+        caltech_loaders=caltech_loaders,
+        loss_fn=loss_fn,
+        device=device,
+        max_nat_epochs=max_nat_epochs,
+        checkpoint_dir=checkpoint_dir,
+        patience=patience,
+        save_intermediate_checkpoints=save_intermediate_checkpoints
+    )
+
+    # --- Step 2: Enrico Screen Images Fine-Tuning (Warmup + Drift) ---
     enrico_loaders = prepare_enrico_dataloaders(
         enrico_root=enrico_root,
         use_wireframes=use_wireframes,
         batch_size=batch_size
     )
 
-    loss_fn = nn.CrossEntropyLoss(label_smoothing=0.1)
-    model = PseudoAlexNet(tiny_factor=tiny_factor, p=p_dropout).to(device)
-
-    # Step 2: Fine-tuning piece
     ft_results = train_fine_tuning_stages(
         model=model,
         cfg=cfg,
@@ -434,11 +632,12 @@ def run_fine_tuning_experiment(
         max_warmup_epochs=max_warmup_epochs,
         max_drift_epochs=max_drift_epochs,
         checkpoint_dir=checkpoint_dir,
+        patience=patience,
         save_intermediate_checkpoints=save_intermediate_checkpoints,
         use_differential_lr=use_differential_lr
     )
 
-    # Step 3: Screen scratch piece (Optional)
+    # --- Step 3: Enrico Screen Images Training from Scratch ---
     scratch_results = {}
     if run_screen_from_scratch:
         scratch_results = train_screen_scratch_stage(
@@ -451,43 +650,88 @@ def run_fine_tuning_experiment(
             p_dropout=p_dropout,
             max_screen_epochs=max_screen_epochs,
             checkpoint_dir=checkpoint_dir,
+            patience=patience,
             save_intermediate_checkpoints=save_intermediate_checkpoints
         )
 
     return {
         "config": cfg,
         "use_wireframes": use_wireframes,
+        "natural_pretraining": nat_results,
         "fine_tuning": ft_results,
         "screen_scratch": scratch_results
     }
+
+
+def _worker_run_config(args: Tuple[int, int, str, bool, bool, Dict[str, Any]]) -> Tuple[str, Dict[str, Any]]:
+    i, j, device_str, use_wireframes, save_intermediate_checkpoints, kwargs = args
+    device = torch.device(device_str)
+    tag = f"grid_{i}_{j}"
+    res = run_fine_tuning_experiment(
+        grid_i=i,
+        grid_j=j,
+        use_wireframes=use_wireframes,
+        save_intermediate_checkpoints=save_intermediate_checkpoints,
+        device=device,
+        **kwargs
+    )
+    return tag, res
 
 
 def run_grid_search(
     grid_indices: Optional[List[Tuple[int, int]]] = None,
     use_wireframes: bool = False,
     save_intermediate_checkpoints: bool = False,
+    use_multi_gpu: bool = True,
     **kwargs
 ) -> Dict[str, Dict[str, Any]]:
     """
-    Executes a loop over selected (or all 9) grid index pairs (grid_i, grid_j).
+    Executes grid search across 9 configurations. Automatically parallelizes 
+    experiments across available GPUs (e.g. cuda:0 and cuda:1) when use_multi_gpu=True.
     """
     if grid_indices is None:
         grid_indices = [(i, j) for i in range(3) for j in range(3)]
 
+    cuda_devices = get_available_cuda_devices()
+    num_gpus = len(cuda_devices)
     all_results = {}
+
     print(f"\n=======================================================")
     print(f"🌐 STARTING GRID SEARCH ACROSS {len(grid_indices)} CONFIGURATIONS")
+    print(f"   Available Devices = {[str(d) for d in cuda_devices]} (Count: {num_gpus})")
     print(f"=======================================================\n")
 
-    for i, j in grid_indices:
-        tag = f"grid_{i}_{j}"
-        res = run_fine_tuning_experiment(
-            grid_i=i,
-            grid_j=j,
-            use_wireframes=use_wireframes,
-            save_intermediate_checkpoints=save_intermediate_checkpoints,
-            **kwargs
-        )
-        all_results[tag] = res
+    if use_multi_gpu and num_gpus >= 2:
+        print(f"⚡ Parallelizing grid search across {num_gpus} GPUs simultaneously!\n")
+        tasks = []
+        for idx, (i, j) in enumerate(grid_indices):
+            assigned_device = cuda_devices[idx % num_gpus]
+            tasks.append((i, j, str(assigned_device), use_wireframes, save_intermediate_checkpoints, kwargs))
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=num_gpus) as executor:
+            future_to_config = {
+                executor.submit(_worker_run_config, task): f"grid_{task[0]}_{task[1]}"
+                for task in tasks
+            }
+            for future in concurrent.futures.as_completed(future_to_config):
+                tag = future_to_config[future]
+                try:
+                    res_tag, res = future.result()
+                    all_results[res_tag] = res
+                    print(f"✅ Completed parallel task: {res_tag}")
+                except Exception as exc:
+                    print(f"❌ Config {tag} generated an exception: {exc}")
+    else:
+        for idx, (i, j) in enumerate(grid_indices):
+            tag = f"grid_{i}_{j}"
+            res = run_fine_tuning_experiment(
+                grid_i=i,
+                grid_j=j,
+                use_wireframes=use_wireframes,
+                save_intermediate_checkpoints=save_intermediate_checkpoints,
+                device=cuda_devices[0],
+                **kwargs
+            )
+            all_results[tag] = res
 
     return all_results
