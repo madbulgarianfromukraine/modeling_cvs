@@ -96,30 +96,61 @@ def analyze_all_pairs_drift(nat_patterns, ft_patterns, scr_patterns, layer_name=
     
     return all_results
 
-#analyze the absolute difference masks
-def plot_difference_grid_pairwise(patterns_a, patterns_b, title_suffix, nrow=8, padding=4):
+def compute_difference_masks(patterns_a, patterns_b):
+    """
+    Computes absolute difference masks |gray_a - gray_b| for matching filter indices
+    between two pattern dictionaries/lists. Returns dict {idx: diff_tensor_chw}.
+    """
+    if isinstance(patterns_a, list) and isinstance(patterns_b, list):
+        patterns_a = {i: img for i, img in enumerate(patterns_a)}
+        patterns_b = {i: img for i, img in enumerate(patterns_b)}
+
     common_indices = sorted(list(set(patterns_a.keys()).intersection(set(patterns_b.keys()))))
-    
-    diff_tensors = []
+    diff_masks = {}
+
     for idx in common_indices:
         tensor_a = patterns_a[idx]
         tensor_b = patterns_b[idx]
-        
+
+        if torch.is_tensor(tensor_a):
+            tensor_a = tensor_a.detach().cpu()
+        else:
+            tensor_a = torch.from_numpy(np.array(tensor_a))
+
+        if torch.is_tensor(tensor_b):
+            tensor_b = tensor_b.detach().cpu()
+        else:
+            tensor_b = torch.from_numpy(np.array(tensor_b))
+
+        if tensor_a.ndim == 3 and tensor_a.shape[0] != 3 and tensor_a.shape[2] == 3:
+            tensor_a = tensor_a.permute(2, 0, 1)
+        if tensor_b.ndim == 3 and tensor_b.shape[0] != 3 and tensor_b.shape[2] == 3:
+            tensor_b = tensor_b.permute(2, 0, 1)
+
         if tensor_a.shape != tensor_b.shape:
             tensor_b = F.interpolate(
-                tensor_b.unsqueeze(0), 
-                size=(tensor_a.shape[1], tensor_a.shape[2]), 
-                mode='bilinear', 
+                tensor_b.unsqueeze(0),
+                size=(tensor_a.shape[1], tensor_a.shape[2]),
+                mode='bilinear',
                 align_corners=False
             ).squeeze(0)
-            
-        # Convert both tensors to grayscale first to isolate luminance structure
+
         gray_a = 0.2989 * tensor_a[0] + 0.5870 * tensor_a[1] + 0.1140 * tensor_a[2]
         gray_b = 0.2989 * tensor_b[0] + 0.5870 * tensor_b[1] + 0.1140 * tensor_b[2]
-        
+
         diff_gray = torch.abs(gray_a - gray_b)
-        diff_tensors.append(diff_gray.unsqueeze(0))
-        
+        diff_rgb = diff_gray.unsqueeze(0).repeat(3, 1, 1)
+        diff_masks[idx] = diff_rgb
+
+    return diff_masks
+
+
+def plot_difference_grid_pairwise(patterns_a, patterns_b, title_suffix, nrow=8, padding=4):
+    diff_masks = compute_difference_masks(patterns_a, patterns_b)
+    if not diff_masks:
+        return
+
+    diff_tensors = [mask[0].unsqueeze(0) for mask in diff_masks.values()]
     batch_tensor = torch.stack(diff_tensors, dim=0)
     grid = vutils.make_grid(batch_tensor, nrow=nrow, padding=padding, normalize=False)
     grid_np = grid[0].cpu().numpy()
@@ -607,6 +638,64 @@ def plot_fourier_angular_difference_grid(filter_data, layers, dc_radius=5, figsi
         print("-" * 68)
 
     return table_data
+
+
+# ==============================================================================
+# ABSOLUTE DIFFERENCE MASK FOURIER ANALYSIS SEQUENCE
+# ==============================================================================
+
+def analyze_difference_masks_fourier(
+    filter_data,
+    layers,
+    pairs=None,
+    dc_radius=5,
+    log_scale=False,
+    figsize=(16, 10),
+    dpi=150
+):
+    """
+    Applies the full 2D and 1D Fourier spectral analysis sequence and NDI Anisotropy Index metrics
+    directly to the ABSOLUTE DIFFERENCE MASKS |I_B - I_A| across model domain pairs.
+    
+    This isolates and quantifies the spatial frequency distribution and directional orientation 
+    (cardinal vs oblique) of the REPRESENTATIONAL CHANGES introduced by fine-tuning/domain adaptation.
+    """
+    if pairs is None:
+        pairs = [
+            ("fine-tuned", "natural", "FT - NAT"),
+            ("screen", "natural", "SCR - NAT"),
+            ("fine-tuned", "screen", "FT - SCR")
+        ]
+
+    diff_filter_data = {}
+    diff_models = []
+
+    for model_b, model_a, label in pairs:
+        pair_key = f"{model_b}_minus_{model_a}"
+        diff_models.append(pair_key)
+        diff_filter_data[pair_key] = {}
+        for layer_name in layers:
+            p_a = filter_data[model_a][layer_name]
+            p_b = filter_data[model_b][layer_name]
+            diff_filter_data[pair_key][layer_name] = list(compute_difference_masks(p_a, p_b).values())
+
+    print(f"\n=======================================================")
+    print(f"📊 FOURIER SPECTRAL ANALYSIS ON ABSOLUTE DIFFERENCE MASKS")
+    print(f"=======================================================\n")
+
+    anisotropy_angular = plot_fourier_angular_distribution_grid(
+        filter_data=diff_filter_data,
+        models=diff_models,
+        layers=layers,
+        dc_radius=dc_radius,
+        log_scale=log_scale,
+        plot_differences=False,
+        figsize=figsize,
+        dpi=dpi
+    )
+
+    return diff_filter_data
+
 
 
 
