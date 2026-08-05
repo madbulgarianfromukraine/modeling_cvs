@@ -163,13 +163,14 @@ _ENRICO_CACHE: Dict[Tuple[str, bool, int], Dict[str, Any]] = {}
 
 def prepare_caltech_dataloaders(
     caltech_root: str,
-    batch_size: int = 128
+    batch_size: int = 128,
+    num_workers: int = 0
 ) -> Dict[str, Any]:
     """
     Prepares DataLoaders and augmentation pipelines for Caltech101 (natural images pre-training).
     Includes thread locking and error handling to prevent multi-GPU download race conditions or corrupted archives.
     """
-    cache_key = (caltech_root, batch_size)
+    cache_key = (caltech_root, batch_size, num_workers)
     with CALTECH_LOCK:
         if cache_key in _CALTECH_CACHE:
             return _CALTECH_CACHE[cache_key]
@@ -203,7 +204,7 @@ def prepare_caltech_dataloaders(
             AugmentationWrapper(caltech_train_raw, caltech_preprocess),
             batch_size=batch_size,
             shuffle=False,
-            num_workers=3,
+            num_workers=num_workers,
         )
         
         caltech_train_mean, caltech_train_std = mean_and_std_for_normalization(caltech_train_raw_loader)
@@ -219,13 +220,13 @@ def prepare_caltech_dataloaders(
         )
 
         train_loader = torch.utils.data.DataLoader(
-            nat_images_train, batch_size=batch_size, shuffle=True, num_workers=3
+            nat_images_train, batch_size=batch_size, shuffle=True, num_workers=num_workers
         )
         val_loader = torch.utils.data.DataLoader(
-            nat_images_val, batch_size=batch_size, shuffle=False, num_workers=3
+            nat_images_val, batch_size=batch_size, shuffle=False, num_workers=num_workers
         )
         test_loader = torch.utils.data.DataLoader(
-            nat_images_test, batch_size=batch_size, shuffle=False, num_workers=3
+            nat_images_test, batch_size=batch_size, shuffle=False, num_workers=num_workers
         )
 
         gpu_augmentations = v2.Compose([
@@ -253,13 +254,14 @@ def prepare_caltech_dataloaders(
 def prepare_enrico_dataloaders(
     enrico_root: str,
     use_wireframes: bool = False,
-    batch_size: int = 128
+    batch_size: int = 128,
+    num_workers: int = 0
 ) -> Dict[str, Any]:
     """
     Prepares normalized DataLoaders and data augmentation pipelines for the Enrico dataset.
     Includes thread locking and caching to prevent multi-GPU race conditions.
     """
-    cache_key = (enrico_root, use_wireframes, batch_size)
+    cache_key = (enrico_root, use_wireframes, batch_size, num_workers)
     with ENRICO_LOCK:
         if cache_key in _ENRICO_CACHE:
             return _ENRICO_CACHE[cache_key]
@@ -276,7 +278,7 @@ def prepare_enrico_dataloaders(
 
         enrico_classes = len(get_allowed_classes())
         screen_raw_loader = torch.utils.data.DataLoader(
-            screen_train_raw, batch_size=batch_size, shuffle=False, pin_memory=True, num_workers=3
+            screen_train_raw, batch_size=batch_size, shuffle=False, pin_memory=False, num_workers=num_workers
         )
         screen_train_mean, screen_train_std = mean_and_std_for_normalization(screen_raw_loader)
 
@@ -295,13 +297,13 @@ def prepare_enrico_dataloaders(
         )
 
         train_loader = torch.utils.data.DataLoader(
-            train_ds, batch_size=batch_size, shuffle=True, pin_memory=True, num_workers=3
+            train_ds, batch_size=batch_size, shuffle=True, pin_memory=False, num_workers=num_workers
         )
         val_loader = torch.utils.data.DataLoader(
-            val_ds, batch_size=batch_size, shuffle=False, pin_memory=True, num_workers=3
+            val_ds, batch_size=batch_size, shuffle=False, pin_memory=False, num_workers=num_workers
         )
         test_loader = torch.utils.data.DataLoader(
-            test_ds, batch_size=batch_size, shuffle=False, pin_memory=True, num_workers=3
+            test_ds, batch_size=batch_size, shuffle=False, pin_memory=False, num_workers=num_workers
         )
 
         gpu_augmentations = v2.Compose([
@@ -708,14 +710,27 @@ def _worker_run_config(args: Tuple[int, int, str, bool, bool, Dict[str, Any]]) -
     i, j, device_str, use_wireframes, save_intermediate_checkpoints, kwargs = args
     device = torch.device(device_str)
     tag = f"grid_{i}_{j}"
-    res = run_fine_tuning_experiment(
-        grid_i=i,
-        grid_j=j,
-        use_wireframes=use_wireframes,
-        save_intermediate_checkpoints=save_intermediate_checkpoints,
-        device=device,
-        **kwargs
-    )
+    
+    if device.type == "cuda":
+        torch.cuda.set_device(device)
+        with torch.cuda.device(device):
+            res = run_fine_tuning_experiment(
+                grid_i=i,
+                grid_j=j,
+                use_wireframes=use_wireframes,
+                save_intermediate_checkpoints=save_intermediate_checkpoints,
+                device=device,
+                **kwargs
+            )
+    else:
+        res = run_fine_tuning_experiment(
+            grid_i=i,
+            grid_j=j,
+            use_wireframes=use_wireframes,
+            save_intermediate_checkpoints=save_intermediate_checkpoints,
+            device=device,
+            **kwargs
+        )
     return tag, res
 
 
@@ -761,7 +776,8 @@ def run_grid_search(
                     all_results[res_tag] = res
                     print(f"✅ Completed parallel task: {res_tag}")
                 except Exception as exc:
-                    print(f"❌ Config {tag} generated an exception: {exc}")
+                    import traceback
+                    print(f"❌ Config {tag} generated an exception:\n{traceback.format_exc()}")
     else:
         for idx, (i, j) in enumerate(grid_indices):
             tag = f"grid_{i}_{j}"
