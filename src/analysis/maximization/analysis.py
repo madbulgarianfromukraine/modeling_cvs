@@ -237,12 +237,12 @@ def compute_fourier_spectrum(image_gray, dc_radius=5, use_log=False):
     magnitude = np.abs(f_shift)
     log_magnitude = np.log(1 + magnitude)
     
-    # 3. Frequency sector masks (exclude DC center component)
+    # 3. Frequency sector masks (exclude DC center component and corner un-inscribed frequencies)
     Y_grid, X_grid = np.indices((h, w))
     theta = np.degrees(np.arctan2(cy - Y_grid, X_grid - cx)) % 180
     R = dist_from_center
     
-    mask_dc = R > dc_radius
+    mask_dc = (R > dc_radius) & (R <= radius)
     mask_cardinal = ((theta < 10) | (theta > 170) | ((theta > 80) & (theta < 100))) & mask_dc
     mask_oblique = (((theta > 35) & (theta < 55)) | ((theta > 125) & (theta < 145))) & mask_dc
     
@@ -287,8 +287,9 @@ def plot_fourier_diagnostic(image_data, title="Fourier Diagnostic", dc_radius=5,
     Y_grid, X_grid = np.indices((h, w))
     theta = np.degrees(np.arctan2(cy - Y_grid, X_grid - cx)) % 180
     R = np.sqrt((X_grid - cx)**2 + (Y_grid - cy)**2)
+    max_radius = min(h, w) / 2.0
     
-    mask_dc = R > dc_radius
+    mask_dc = (R > dc_radius) & (R <= max_radius)
     mask_cardinal = ((theta < 10) | (theta > 170) | ((theta > 80) & (theta < 100))) & mask_dc
     mask_oblique = (((theta > 35) & (theta < 55)) | ((theta > 125) & (theta < 145))) & mask_dc
     
@@ -305,7 +306,7 @@ def plot_fourier_diagnostic(image_data, title="Fourier Diagnostic", dc_radius=5,
     fig, axes = plt.subplots(1, 4, figsize=figsize)
     
     # Panel 1: Masked Spatial Image
-    circular_mask = R <= (min(h, w) / 2.0)
+    circular_mask = R <= max_radius
     masked_img = image_gray * circular_mask
     axes[0].imshow(masked_img, cmap='gray')
     axes[0].set_title(f"Spatial Image\n({title})", fontsize=11, fontweight='bold')
@@ -404,14 +405,15 @@ def compute_layer_angular_distribution(filter_images, dc_radius=5, use_log=False
     Y_grid, X_grid = np.indices((h, w))
     theta = np.degrees(np.arctan2(cy - Y_grid, X_grid - cx)) % 180
     R = np.sqrt((X_grid - cx)**2 + (Y_grid - cy)**2)
-    mask_dc = R > dc_radius
+    max_radius = min(h, w) / 2.0
+    mask_dc = (R > dc_radius) & (R <= max_radius)
 
     total_angular_energy = np.zeros_like(angles, dtype=np.float64)
     anisotropy_scores = []
 
     for img in filter_images:
         image_gray = _step1_preprocess(img)
-        magnitude, log_mag, ndi = compute_fourier_spectrum(image_gray, dc_radius=dc_radius)
+        magnitude, log_mag, ndi = compute_fourier_spectrum(image_gray, dc_radius=dc_radius, use_log=use_log)
         anisotropy_scores.append(ndi)
 
         spectrum = log_mag if use_log else magnitude
