@@ -211,10 +211,11 @@ def _step1_preprocess(image_data):
     dx = (w - size) // 2
     return gray[dy:dy+size, dx:dx+size]
 
-def compute_fourier_spectrum(image_gray, dc_radius=5):
+def compute_fourier_spectrum(image_gray, dc_radius=5, use_log=False):
     """
     Step 2: Apply a circular spatial mask, compute 2D FFT, and calculate
     Normalized Difference Index (NDI) across cardinal and oblique sectors.
+    Optionally computes NDI using log-magnitude spectrum when use_log=True or linear magnitude spectrum when use_log=False.
     """
     h, w = image_gray.shape
     cy, cx = h // 2, w // 2
@@ -244,8 +245,10 @@ def compute_fourier_spectrum(image_gray, dc_radius=5):
     mask_cardinal = ((theta < 10) | (theta > 170) | ((theta > 80) & (theta < 100))) & mask_dc
     mask_oblique = (((theta > 35) & (theta < 55)) | ((theta > 125) & (theta < 145))) & mask_dc
     
-    cardinal_energy = np.sum(magnitude[mask_cardinal])
-    oblique_energy = np.sum(magnitude[mask_oblique])
+    spectrum = log_magnitude if use_log else magnitude
+    
+    cardinal_energy = np.sum(spectrum[mask_cardinal])
+    oblique_energy = np.sum(spectrum[mask_oblique])
     
     total_energy = cardinal_energy + oblique_energy
     if total_energy == 0:
@@ -261,20 +264,21 @@ def compute_rotational_anisotropy(image_data, dc_radius=5, use_log=True):
     Optionally returns log-magnitude spectrum when use_log=True or linear magnitude spectrum when use_log=False.
     """
     image_gray = _step1_preprocess(image_data)
-    mag, log_mag, ndi = compute_fourier_spectrum(image_gray, dc_radius=dc_radius)
+    mag, log_mag, ndi = compute_fourier_spectrum(image_gray, dc_radius=dc_radius, use_log=use_log)
     spectrum = log_mag if use_log else mag
     return spectrum, ndi
 
-def plot_fourier_diagnostic(image_data, title="Fourier Diagnostic", dc_radius=5, log_scale=False, figsize=(18, 4.5)):
+def plot_fourier_diagnostic(image_data, title="Fourier Diagnostic", dc_radius=5, log_scale=False, use_log=False, figsize=(18, 4.5)):
     """
     Generates a 4-panel visual diagnostic figure:
     1. Spatial Image (Circular Masked)
     2. Log Magnitude Fourier Spectrum
     3. Cardinal (Red) vs Oblique (Blue) Sector Overlay
-    4. 1D Angular Energy Distribution Plot across 0°, 45°, 90°, 135°, 180° (with optional log_scale)
+    4. 1D Angular Energy Distribution Plot across 0°, 45°, 90°, 135°, 180° (with optional log_scale/use_log)
     """
     image_gray = _step1_preprocess(image_data)
-    magnitude, log_mag, ndi = compute_fourier_spectrum(image_gray, dc_radius=dc_radius)
+    magnitude, log_mag, ndi = compute_fourier_spectrum(image_gray, dc_radius=dc_radius, use_log=use_log)
+    spectrum = log_mag if use_log else magnitude
     
     h, w = image_gray.shape
     cy, cx = h // 2, w // 2
@@ -292,7 +296,7 @@ def plot_fourier_diagnostic(image_data, title="Fourier Diagnostic", dc_radius=5,
     angular_energy = []
     for a in angles:
         bin_mask = (np.abs(theta - a) <= 2) & mask_dc
-        angular_energy.append(np.sum(magnitude[bin_mask]))
+        angular_energy.append(np.sum(spectrum[bin_mask]))
     angular_energy = np.array(angular_energy)
     if np.max(angular_energy) > 0:
         angular_energy = angular_energy / np.max(angular_energy)
@@ -659,6 +663,7 @@ def analyze_difference_masks_fourier(
     pairs=None,
     dc_radius=5,
     log_scale=False,
+    use_log=False,
     figsize=(16, 10),
     dpi=150
 ):
@@ -698,6 +703,7 @@ def analyze_difference_masks_fourier(
         layers=layers,
         dc_radius=dc_radius,
         log_scale=log_scale,
+        use_log=use_log,
         plot_differences=False,
         figsize=figsize,
         dpi=dpi
@@ -706,7 +712,7 @@ def analyze_difference_masks_fourier(
     return diff_filter_data
 
 
-def plot_synthetic_fourier_difference_demo(dc_radius=5, figsize=(16, 4.5), dpi=150):
+def plot_synthetic_fourier_difference_demo(dc_radius=5, use_log=False, figsize=(16, 4.5), dpi=150):
     """
     Generates a synthetic demonstration using two controlled 2D spatial gratings:
     - Image 1: 90° frequency energy (horizontal spatial grating)
@@ -714,6 +720,7 @@ def plot_synthetic_fourier_difference_demo(dc_radius=5, figsize=(16, 4.5), dpi=1
 
     Plots individual 1D Angular Energy distributions and calculates the resulting
     difference profile ΔEnergy = Energy_45° - Energy_90°.
+    Optionally computes energy distributions with use_log=True or linear magnitude with use_log=False.
     """
     h, w = 120, 120
     y, x = np.indices((h, w))
@@ -724,11 +731,11 @@ def plot_synthetic_fourier_difference_demo(dc_radius=5, figsize=(16, 4.5), dpi=1
     # Image 2: 45° frequency energy (diagonal spatial grating x+y)
     img_45 = np.sin(2 * np.pi * 0.15 * (x + y) / np.sqrt(2))
 
-    mag_90, log_90, ndi_90 = compute_fourier_spectrum(img_90, dc_radius=dc_radius)
-    mag_45, log_45, ndi_45 = compute_fourier_spectrum(img_45, dc_radius=dc_radius)
+    mag_90, log_90, ndi_90 = compute_fourier_spectrum(img_90, dc_radius=dc_radius, use_log=use_log)
+    mag_45, log_45, ndi_45 = compute_fourier_spectrum(img_45, dc_radius=dc_radius, use_log=use_log)
 
-    angles, energy_90, _ = compute_layer_angular_distribution([img_90], dc_radius=dc_radius)
-    angles, energy_45, _ = compute_layer_angular_distribution([img_45], dc_radius=dc_radius)
+    angles, energy_90, _ = compute_layer_angular_distribution([img_90], dc_radius=dc_radius, use_log=use_log)
+    angles, energy_45, _ = compute_layer_angular_distribution([img_45], dc_radius=dc_radius, use_log=use_log)
     diff_energy = energy_45 - energy_90
 
     fig, axes = plt.subplots(1, 3, figsize=figsize, dpi=dpi)
