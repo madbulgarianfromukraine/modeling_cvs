@@ -502,9 +502,9 @@ def plot_fourier_cmap_grid(filter_data, models, layers, dc_radius=5, delta=21, l
     """
     anisotropy_results = {m: {} for m in models}
 
-    fig, axs = plt.subplots(len(models), len(layers), figsize=figsize, dpi=dpi)
     title_prefix = "Log-Magnitude" if use_log else "Linear Magnitude"
-    fig.suptitle(f"Layer-wise 2D Fourier {title_prefix} Spectra Analysis & Anisotropy Index Metrics", fontsize=16, y=0.96)
+    print(f"\n📊 Layer-wise 2D Fourier {title_prefix} Spectra Analysis & Anisotropy Index Metrics\n")
+    fig, axs = plt.subplots(len(models), len(layers), figsize=figsize, dpi=dpi)
 
     for i, model_name in enumerate(models):
         for j, layer_name in enumerate(layers):
@@ -533,7 +533,6 @@ def plot_fourier_cmap_grid(filter_data, models, layers, dc_radius=5, delta=21, l
                 fig.colorbar(im, ax=ax, shrink=0.7, label='Log Spectral Intensity')
 
     plt.tight_layout()
-    plt.subplots_adjust(top=0.88)
     plt.show()
 
     # Print out summary text table
@@ -560,8 +559,8 @@ def plot_fourier_angular_distribution_grid(filter_data, models, layers, dc_radiu
     """
     anisotropy_results = {m: {} for m in models}
 
+    print(f"\n📊 Layer-wise 1D Angular Energy Distribution & Anisotropy Index Metrics\n")
     fig, axs = plt.subplots(len(models), len(layers), figsize=figsize, dpi=dpi)
-    fig.suptitle("Layer-wise 1D Angular Energy Distribution & Anisotropy Index Metrics", fontsize=16, y=0.96)
 
     c_low, c_high = 90 - delta, 90 + delta
     o1_low, o1_high = 45 - delta, 45 + delta
@@ -609,7 +608,6 @@ def plot_fourier_angular_distribution_grid(filter_data, models, layers, dc_radiu
                 ax.set_xlabel("Angle θ (degrees)", fontsize=9)
 
     plt.tight_layout()
-    plt.subplots_adjust(top=0.90)
     plt.show()
 
     # Print out summary text table
@@ -643,8 +641,8 @@ def plot_fourier_angular_difference_grid(filter_data, layers, dc_radius=5, delta
         ("screen", "natural", "Diff: SCREEN SCRATCH - NATURAL")
     ]
 
+    print(f"\n📊 Layer-wise 1D Angular Energy Difference Profiles (Domain Drift Shift)\n")
     fig, axs = plt.subplots(len(diff_pairs), len(layers), figsize=figsize, dpi=dpi)
-    fig.suptitle("Layer-wise 1D Angular Energy Difference Profiles (Domain Drift Shift)", fontsize=16, y=0.96)
 
     table_data = []
     c_low, c_high = 90 - delta, 90 + delta
@@ -703,7 +701,6 @@ def plot_fourier_angular_difference_grid(filter_data, layers, dc_radius=5, delta
                 ax.set_xlabel("Angle θ (degrees)", fontsize=9)
 
     plt.tight_layout()
-    plt.subplots_adjust(top=0.90)
     plt.show()
 
     # Print summary text table
