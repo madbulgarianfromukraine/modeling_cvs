@@ -19,6 +19,15 @@ data/
 .vscode/
 # Mac
 .DS_Store
-#Antigravity
+# Antigravity
 .agents/
 .gemini/
+
+# Images & Media
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.svg
+*.gif
+
