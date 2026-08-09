@@ -207,28 +207,34 @@ def compare_all_domain_states(nat_patterns, ft_patterns, scr_patterns, layer_nam
     """
     Executes pairwise spatial difference grid plotting across all domain pairs,
     displaying both Appeared and Disappeared feature grids for each pair.
+    Prints a clear layer header banner once to stdout for all figures that follow.
     """
-    # Comparison 1: Natural vs Fine-Tuned
+    clean_layer = f"FEATURES.{layer_name.upper()}.CONV" if not layer_name.upper().startswith("FEATURES") else layer_name.upper()
+    print(f"\n=======================================================")
+    print(f"📸 SPATIAL DIFFERENCE MASK ANALYSIS FOR LAYER: {clean_layer}")
+    print(f"=======================================================\n")
+
+    # Comparison 1: Fine-Tuned minus Natural (I_B = FT, I_A = NAT)
     plot_difference_grid_pairwise(
         nat_patterns, 
         ft_patterns, 
-        title_suffix=f"{layer_name} (Natural vs Fine-Tuned)",
+        title_suffix="(Fine-Tuned - Natural)",
         mode=mode
     )
     
-    # Comparison 2: Natural vs Screen-from-Scratch
+    # Comparison 2: Screen-from-Scratch minus Natural (I_B = SCR, I_A = NAT)
     plot_difference_grid_pairwise(
         nat_patterns, 
         scr_patterns, 
-        title_suffix=f"{layer_name} (Natural vs Screen Scratch)",
+        title_suffix="(Screen Scratch - Natural)",
         mode=mode
     )
     
-    # Comparison 3: Fine-Tuned vs Screen-from-Scratch
+    # Comparison 3: Screen-from-Scratch minus Fine-Tuned (I_B = SCR, I_A = FT)
     plot_difference_grid_pairwise(
         ft_patterns, 
         scr_patterns, 
-        title_suffix=f"{layer_name} (Fine-Tuned vs Screen Scratch)",
+        title_suffix="(Screen Scratch - Fine-Tuned)",
         mode=mode
     )
 
@@ -633,7 +639,7 @@ def plot_fourier_angular_difference_grid(filter_data, layers, dc_radius=5, delta
     """
     diff_pairs = [
         ("fine-tuned", "natural", "Diff: FINE-TUNED - NATURAL"),
-        ("screen", "natural", "Diff: SCREEN - NATURAL")
+        ("screen", "natural", "Diff: SCREEN SCRATCH - NATURAL")
     ]
 
     fig, axs = plt.subplots(len(diff_pairs), len(layers), figsize=figsize, dpi=dpi)
@@ -733,9 +739,9 @@ def analyze_difference_masks_fourier(
     """
     if pairs is None:
         pairs = [
-            ("fine-tuned", "natural", "FT - NAT"),
-            ("screen", "natural", "SCR - NAT"),
-            ("fine-tuned", "screen", "FT - SCR")
+            ("fine-tuned", "natural", "FINE-TUNED - NATURAL"),
+            ("screen", "natural", "SCREEN SCRATCH - NATURAL"),
+            ("fine-tuned", "screen", "FINE-TUNED - SCREEN SCRATCH")
         ]
 
     modes_to_run = ["appeared", "disappeared", "absolute"] if mode in ["all", "separate", "both"] else [mode]
