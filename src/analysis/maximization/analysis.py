@@ -22,6 +22,7 @@ def analyze_layer_drift(patterns_a, patterns_b, layer_name="Layer", pair_labels=
     
     results = {}
     mse_list, mae_list, ssim_list = [], [], []
+    appeared_mae_list, disappeared_mae_list = [], []
     
     for idx in common_indices:
         tensor_a = patterns_a[idx]
@@ -44,21 +45,29 @@ def analyze_layer_drift(patterns_a, patterns_b, layer_name="Layer", pair_labels=
         
         mse = np.mean((img_a - img_b) ** 2)
         mae = np.mean(np.abs(img_a - img_b))
+        appeared_mae = np.mean(np.maximum(0.0, img_b - img_a))
+        disappeared_mae = np.mean(np.maximum(0.0, img_a - img_b))
         score = ssim(img_a, img_b, data_range=1.0)
         
         results[idx] = {
             'mse': mse,
             'mae': mae,
+            'appeared_mae': appeared_mae,
+            'disappeared_mae': disappeared_mae,
             'ssim': score
         }
         
         mse_list.append(mse)
         mae_list.append(mae)
+        appeared_mae_list.append(appeared_mae)
+        disappeared_mae_list.append(disappeared_mae)
         ssim_list.append(score)
 
     summary_stats = {
         'avg_mse': np.mean(mse_list),
         'avg_mae': np.mean(mae_list),
+        'avg_appeared_mae': np.mean(appeared_mae_list),
+        'avg_disappeared_mae': np.mean(disappeared_mae_list),
         'avg_ssim': np.mean(ssim_list),
         'most_drifted_filter': common_indices[np.argmin(ssim_list)],
         'least_drifted_filter': common_indices[np.argmax(ssim_list)]
@@ -67,8 +76,10 @@ def analyze_layer_drift(patterns_a, patterns_b, layer_name="Layer", pair_labels=
     print(f"\n======== STATISTICAL ANALYSIS FOR {layer_name.upper()} ({pair_labels[0]} vs {pair_labels[1]}) ========")
     print(f"Total Filters Evaluated : {len(common_indices)}")
     print(f"Layer Average SSIM      : {summary_stats['avg_ssim']:.4f}")
+    print(f"Layer Average Total MAE : {summary_stats['avg_mae']:.6f}")
+    print(f"  └─ Appeared Gain MAE  : {summary_stats['avg_appeared_mae']:.6f}  (ReLU({pair_labels[1]} - {pair_labels[0]}))")
+    print(f"  └─ Disappeared Loss MAE: {summary_stats['avg_disappeared_mae']:.6f} (ReLU({pair_labels[0]} - {pair_labels[1]}))")
     print(f"Layer Average MSE       : {summary_stats['avg_mse']:.6f}")
-    print(f"Layer Average MAE       : {summary_stats['avg_mae']:.6f}")
     print(f"Most Drifted Filter     : Index {summary_stats['most_drifted_filter']} (SSIM: {min(ssim_list):.4f})")
     print(f"Least Drifted Filter    : Index {summary_stats['least_drifted_filter']} (SSIM: {max(ssim_list):.4f})")
     print("=====================================================")
@@ -99,10 +110,13 @@ def analyze_all_pairs_drift(nat_patterns, ft_patterns, scr_patterns, layer_name=
     
     return all_results
 
-def compute_difference_masks(patterns_a, patterns_b):
+def compute_difference_masks(patterns_a, patterns_b, mode="absolute"):
     """
-    Computes absolute difference masks |gray_a - gray_b| for matching filter indices
-    between two pattern dictionaries/lists. Returns dict {idx: diff_tensor_chw}.
+    Computes directional or absolute difference masks for matching filter indices
+    between two pattern dictionaries/lists:
+    - mode="absolute"              : |gray_b - gray_a| (Unsigned total difference)
+    - mode="appeared" / "gained"   : ReLU(gray_b - gray_a) (Newly introduced features in B)
+    - mode="disappeared" / "lost"  : ReLU(gray_a - gray_b) (Erased features from baseline A)
     """
     if isinstance(patterns_a, list) and isinstance(patterns_b, list):
         patterns_a = {i: img for i, img in enumerate(patterns_a)}
@@ -141,52 +155,78 @@ def compute_difference_masks(patterns_a, patterns_b):
         gray_a = 0.2989 * tensor_a[0] + 0.5870 * tensor_a[1] + 0.1140 * tensor_a[2]
         gray_b = 0.2989 * tensor_b[0] + 0.5870 * tensor_b[1] + 0.1140 * tensor_b[2]
 
-        diff_gray = torch.abs(gray_a - gray_b)
+        if mode in ["appeared", "gained", "new"]:
+            diff_gray = torch.clamp(gray_b - gray_a, min=0.0)
+        elif mode in ["disappeared", "lost", "gone"]:
+            diff_gray = torch.clamp(gray_a - gray_b, min=0.0)
+        else:
+            diff_gray = torch.abs(gray_b - gray_a)
+
         diff_rgb = diff_gray.unsqueeze(0).repeat(3, 1, 1)
         diff_masks[idx] = diff_rgb
 
     return diff_masks
 
 
-def plot_difference_grid_pairwise(patterns_a, patterns_b, title_suffix, nrow=8, padding=4):
-    diff_masks = compute_difference_masks(patterns_a, patterns_b)
-    if not diff_masks:
-        return
-
-    diff_tensors = [mask[0].unsqueeze(0) for mask in diff_masks.values()]
-    batch_tensor = torch.stack(diff_tensors, dim=0)
-    grid = vutils.make_grid(batch_tensor, nrow=nrow, padding=padding, normalize=False)
-    grid_np = grid[0].cpu().numpy()
+def plot_difference_grid_pairwise(patterns_a, patterns_b, title_suffix, mode="both", nrow=8, padding=4):
+    """
+    Plots directional spatial difference mask grids across matching filter indices.
+    When mode="both" (default), displays two separate grid plots:
+    1. ✨ Appeared / Newly Learned Features (ReLU(I_B - I_A))
+    2. 🍂 Disappeared / Erased Features (ReLU(I_A - I_B))
+    """
+    modes_to_plot = ["appeared", "disappeared"] if mode in ["both", "separate", "all"] else [mode]
     
-    plt.figure(figsize=(14, 10), dpi=200)
-    im = plt.imshow(grid_np, cmap='hot', vmin=0.0, vmax=0.5)
-    
-    plt.title(f"Absolute Structural Difference Masks - {title_suffix.upper()}", fontsize=12, fontweight='bold', pad=15)
-    plt.axis('off')
-    plt.colorbar(im, shrink=0.6, label='Magnitude of Structural Representation Change')
-    plt.tight_layout()
-    plt.show()
+    for m in modes_to_plot:
+        diff_masks = compute_difference_masks(patterns_a, patterns_b, mode=m)
+        if not diff_masks:
+            continue
 
-def compare_all_domain_states(nat_patterns, ft_patterns, scr_patterns, layer_name="Layer"):
+        diff_tensors = [mask[0].unsqueeze(0) for mask in diff_masks.values()]
+        batch_tensor = torch.stack(diff_tensors, dim=0)
+        grid = vutils.make_grid(batch_tensor, nrow=nrow, padding=padding, normalize=False)
+        grid_np = grid[0].cpu().numpy()
+        
+        mode_label = "APPEARED FEATURES (ReLU(I_B - I_A))" if m in ["appeared", "gained", "new"] else \
+                     ("DISAPPEARED FEATURES (ReLU(I_A - I_B))" if m in ["disappeared", "lost", "gone"] else "ABSOLUTE DIFFERENCE (|I_B - I_A|)")
+        
+        plt.figure(figsize=(14, 10), dpi=200)
+        im = plt.imshow(grid_np, cmap='hot', vmin=0.0, vmax=0.5)
+        
+        plt.title(f"{mode_label} - {title_suffix.upper()}", fontsize=12, fontweight='bold', pad=15)
+        plt.axis('off')
+        plt.colorbar(im, shrink=0.6, label='Structural Representation Change Magnitude')
+        plt.tight_layout()
+        plt.show()
+
+
+def compare_all_domain_states(nat_patterns, ft_patterns, scr_patterns, layer_name="Layer", mode="both"):
+    """
+    Executes pairwise spatial difference grid plotting across all domain pairs,
+    displaying both Appeared and Disappeared feature grids for each pair.
+    """
     # Comparison 1: Natural vs Fine-Tuned
     plot_difference_grid_pairwise(
         nat_patterns, 
         ft_patterns, 
-        title_suffix=f"{layer_name} (Natural vs Fine-Tuned)"
+        title_suffix=f"{layer_name} (Natural vs Fine-Tuned)",
+        mode=mode
     )
     
     # Comparison 2: Natural vs Screen-from-Scratch
     plot_difference_grid_pairwise(
         nat_patterns, 
         scr_patterns, 
-        title_suffix=f"{layer_name} (Natural vs Screen Scratch)"
+        title_suffix=f"{layer_name} (Natural vs Screen Scratch)",
+        mode=mode
     )
     
     # Comparison 3: Fine-Tuned vs Screen-from-Scratch
     plot_difference_grid_pairwise(
         ft_patterns, 
         scr_patterns, 
-        title_suffix=f"{layer_name} (Fine-Tuned vs Screen Scratch)"
+        title_suffix=f"{layer_name} (Fine-Tuned vs Screen Scratch)",
+        mode=mode
     )
 
 #  Fourier analysis & Normalized Difference Anisotropy Index (NDI)
@@ -665,6 +705,7 @@ def analyze_difference_masks_fourier(
     filter_data,
     layers,
     pairs=None,
+    mode="all",
     dc_radius=5,
     log_scale=False,
     use_log=False,
@@ -673,10 +714,16 @@ def analyze_difference_masks_fourier(
 ):
     """
     Applies the full 2D and 1D Fourier spectral analysis sequence and NDI Anisotropy Index metrics
-    directly to the ABSOLUTE DIFFERENCE MASKS |I_B - I_A| across model domain pairs.
+    directly to spatial DIFFERENCE MASKS across model domain pairs.
     
-    This isolates and quantifies the spatial frequency distribution and directional orientation 
-    (cardinal vs oblique) of the REPRESENTATIONAL CHANGES introduced by fine-tuning/domain adaptation.
+    Parameters:
+    -----------
+    mode : str
+        - "all" / "separate" : Analyzes APPEARED Features (ReLU(I_B - I_A)), DISAPPEARED Features (ReLU(I_A - I_B)),
+                                and ABSOLUTE Total Differences (|I_B - I_A|) separately.
+        - "appeared"        : Analyzes newly introduced features in model B.
+        - "disappeared"     : Analyzes erased features from baseline model A.
+        - "absolute"        : Analyzes unsigned total difference magnitude.
     """
     if pairs is None:
         pairs = [
@@ -685,35 +732,46 @@ def analyze_difference_masks_fourier(
             ("fine-tuned", "screen", "FT - SCR")
         ]
 
-    diff_filter_data = {}
-    diff_models = []
+    modes_to_run = ["appeared", "disappeared", "absolute"] if mode in ["all", "separate", "both"] else [mode]
+    results = {}
 
-    for model_b, model_a, label in pairs:
-        pair_key = f"{model_b}_minus_{model_a}"
-        diff_models.append(pair_key)
-        diff_filter_data[pair_key] = {}
-        for layer_name in layers:
-            p_a = filter_data[model_a][layer_name]
-            p_b = filter_data[model_b][layer_name]
-            diff_filter_data[pair_key][layer_name] = list(compute_difference_masks(p_a, p_b).values())
+    for current_mode in modes_to_run:
+        mode_title = {
+            "appeared": "✨ APPEARED / NEWLY LEARNED FEATURES (ReLU(I_B - I_A))",
+            "disappeared": "🍂 DISAPPEARED / ERASED FEATURES (ReLU(I_A - I_B))",
+            "absolute": "📊 ABSOLUTE TOTAL DIFFERENCE MASKS (|I_B - I_A|)"
+        }.get(current_mode, f"FOURIER ANALYSIS ({current_mode.upper()})")
 
-    print(f"\n=======================================================")
-    print(f"📊 FOURIER SPECTRAL ANALYSIS ON ABSOLUTE DIFFERENCE MASKS")
-    print(f"=======================================================\n")
+        diff_filter_data = {}
+        diff_models = []
 
-    anisotropy_angular = plot_fourier_angular_distribution_grid(
-        filter_data=diff_filter_data,
-        models=diff_models,
-        layers=layers,
-        dc_radius=dc_radius,
-        log_scale=log_scale,
-        use_log=use_log,
-        plot_differences=False,
-        figsize=figsize,
-        dpi=dpi
-    )
+        for model_b, model_a, label in pairs:
+            pair_key = f"{model_b}_minus_{model_a}"
+            diff_models.append(pair_key)
+            diff_filter_data[pair_key] = {}
+            for layer_name in layers:
+                p_a = filter_data[model_a][layer_name]
+                p_b = filter_data[model_b][layer_name]
+                diff_filter_data[pair_key][layer_name] = list(compute_difference_masks(p_a, p_b, mode=current_mode).values())
 
-    return diff_filter_data
+        print(f"\n=======================================================")
+        print(f"📊 {mode_title}")
+        print(f"=======================================================\n")
+
+        anisotropy_angular = plot_fourier_angular_distribution_grid(
+            filter_data=diff_filter_data,
+            models=diff_models,
+            layers=layers,
+            dc_radius=dc_radius,
+            log_scale=log_scale,
+            use_log=use_log,
+            plot_differences=False,
+            figsize=figsize,
+            dpi=dpi
+        )
+        results[current_mode] = diff_filter_data
+
+    return results if len(modes_to_run) > 1 else results[modes_to_run[0]]
 
 
 def plot_synthetic_fourier_difference_demo(dc_radius=5, use_log=False, figsize=(16, 4.5), dpi=150):
