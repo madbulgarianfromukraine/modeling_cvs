@@ -280,13 +280,16 @@ def compute_fourier_spectrum(image_gray, dc_radius=5, use_log=False):
     log_magnitude = np.log(1 + magnitude)
     
     # 3. Frequency sector masks (exclude DC center component and corner un-inscribed frequencies)
+    # Using canonical literature measurement windows (+/- 21° around target centers):
+    # Cardinal: 0°/180° ± 21° and 90° ± 21° (Total bandwidth = 84°)
+    # Oblique: 45° ± 21° and 135° ± 21°    (Total bandwidth = 84°)
     Y_grid, X_grid = np.indices((h, w))
     theta = np.degrees(np.arctan2(cy - Y_grid, X_grid - cx)) % 180
     R = dist_from_center
     
     mask_dc = (R > dc_radius) & (R <= radius)
-    mask_cardinal = ((theta < 10) | (theta > 170) | ((theta > 80) & (theta < 100))) & mask_dc
-    mask_oblique = (((theta > 35) & (theta < 55)) | ((theta > 125) & (theta < 145))) & mask_dc
+    mask_cardinal = ((theta < 21) | (theta > 159) | ((theta > 69) & (theta < 111))) & mask_dc
+    mask_oblique = (((theta >= 24) & (theta <= 66)) | ((theta >= 114) & (theta <= 156))) & mask_dc
     
     spectrum = log_magnitude if use_log else magnitude
     
@@ -332,8 +335,8 @@ def plot_fourier_diagnostic(image_data, title="Fourier Diagnostic", dc_radius=5,
     max_radius = min(h, w) / 2.0
     
     mask_dc = (R > dc_radius) & (R <= max_radius)
-    mask_cardinal = ((theta < 10) | (theta > 170) | ((theta > 80) & (theta < 100))) & mask_dc
-    mask_oblique = (((theta > 35) & (theta < 55)) | ((theta > 125) & (theta < 145))) & mask_dc
+    mask_cardinal = ((theta < 21) | (theta > 159) | ((theta > 69) & (theta < 111))) & mask_dc
+    mask_oblique = (((theta >= 24) & (theta <= 66)) | ((theta >= 114) & (theta <= 156))) & mask_dc
     
     # Calculate 1D Angular Energy Profile
     angles = np.arange(0, 180, 2)
@@ -381,12 +384,12 @@ def plot_fourier_diagnostic(image_data, title="Fourier Diagnostic", dc_radius=5,
     
     # Panel 4: 1D Angular Energy Distribution
     axes[3].plot(angles, angular_energy, color='darkgreen', lw=2)
-    axes[3].axvspan(0, 10, color='red', alpha=0.2, label='Cardinal (0°/180°)')
-    axes[3].axvspan(80, 100, color='red', alpha=0.2, label='Cardinal (90°)')
-    axes[3].axvspan(170, 180, color='red', alpha=0.2)
+    axes[3].axvspan(0, 21, color='red', alpha=0.2, label='Cardinal (0°/180° ±21°)')
+    axes[3].axvspan(69, 111, color='red', alpha=0.2, label='Cardinal (90° ±21°)')
+    axes[3].axvspan(159, 180, color='red', alpha=0.2)
     
-    axes[3].axvspan(35, 55, color='blue', alpha=0.2, label='Oblique (45°)')
-    axes[3].axvspan(125, 145, color='blue', alpha=0.2, label='Oblique (135°)')
+    axes[3].axvspan(24, 66, color='blue', alpha=0.2, label='Oblique (45° ±21°)')
+    axes[3].axvspan(114, 156, color='blue', alpha=0.2, label='Oblique (135° ±21°)')
     
     axes[3].set_xticks([0, 45, 90, 135, 180])
     axes[3].set_xlim(0, 180)
@@ -556,13 +559,13 @@ def plot_fourier_angular_distribution_grid(filter_data, models, layers, dc_radiu
             # Plot 1D energy profile
             ax.plot(angles, avg_angular_energy, color='darkgreen', lw=2)
 
-            # Highlight Cardinal (red) and Oblique (blue) sectors
-            ax.axvspan(0, 10, color='red', alpha=0.2, label='Cardinal (0°/180°)' if (i == 0 and j == 0) else "")
-            ax.axvspan(80, 100, color='red', alpha=0.2, label='Cardinal (90°)' if (i == 0 and j == 0) else "")
-            ax.axvspan(170, 180, color='red', alpha=0.2)
+            # Highlight Cardinal (red) and Oblique (blue) sectors (±21° literature measurement windows)
+            ax.axvspan(0, 21, color='red', alpha=0.2, label='Cardinal (0°/180°)' if (i == 0 and j == 0) else "")
+            ax.axvspan(69, 111, color='red', alpha=0.2, label='Cardinal (90°)' if (i == 0 and j == 0) else "")
+            ax.axvspan(159, 180, color='red', alpha=0.2)
 
-            ax.axvspan(35, 55, color='blue', alpha=0.2, label='Oblique (45°)' if (i == 0 and j == 0) else "")
-            ax.axvspan(125, 145, color='blue', alpha=0.2, label='Oblique (135°)' if (i == 0 and j == 0) else "")
+            ax.axvspan(24, 66, color='blue', alpha=0.2, label='Oblique (45°)' if (i == 0 and j == 0) else "")
+            ax.axvspan(114, 156, color='blue', alpha=0.2, label='Oblique (135°)' if (i == 0 and j == 0) else "")
 
             ax.set_xticks([0, 45, 90, 135, 180])
             ax.set_xlim(0, 180)
@@ -653,13 +656,13 @@ def plot_fourier_angular_difference_grid(filter_data, layers, dc_radius=5, use_l
             ax.fill_between(angles, diff_energy, 0, where=(diff_energy >= 0), color=color, alpha=0.15)
             ax.fill_between(angles, diff_energy, 0, where=(diff_energy < 0), color='gray', alpha=0.15)
 
-            # Highlight Cardinal (red) and Oblique (blue) sectors
-            ax.axvspan(0, 10, color='red', alpha=0.15, label='Cardinal (0°/180°)' if (i == 0 and j == 0) else "")
-            ax.axvspan(80, 100, color='red', alpha=0.15, label='Cardinal (90°)' if (i == 0 and j == 0) else "")
-            ax.axvspan(170, 180, color='red', alpha=0.15)
+            # Highlight Cardinal (red) and Oblique (blue) sectors (±21° literature measurement windows)
+            ax.axvspan(0, 21, color='red', alpha=0.15, label='Cardinal (0°/180°)' if (i == 0 and j == 0) else "")
+            ax.axvspan(69, 111, color='red', alpha=0.15, label='Cardinal (90°)' if (i == 0 and j == 0) else "")
+            ax.axvspan(159, 180, color='red', alpha=0.15)
 
-            ax.axvspan(35, 55, color='blue', alpha=0.15, label='Oblique (45°)' if (i == 0 and j == 0) else "")
-            ax.axvspan(125, 145, color='blue', alpha=0.15, label='Oblique (135°)' if (i == 0 and j == 0) else "")
+            ax.axvspan(24, 66, color='blue', alpha=0.15, label='Oblique (45°)' if (i == 0 and j == 0) else "")
+            ax.axvspan(114, 156, color='blue', alpha=0.15, label='Oblique (135°)' if (i == 0 and j == 0) else "")
 
             ax.set_xticks([0, 45, 90, 135, 180])
             ax.set_xlim(0, 180)
