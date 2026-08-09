@@ -13,7 +13,7 @@ if PROJECT_ROOT not in sys.path:
 from src.analysis.maximization.analysis import compute_difference_masks
 
 
-def run_puppy_directional_difference_demo(image_path=None, figsize=(10, 9), dpi=200, save_path=None):
+def run_puppy_directional_difference_demo(image_path=None, figsize=(9, 8.5), dpi=200, save_path=None):
     """
     Visual Demonstration of Spatial Directional Difference Masks using puppy.jpeg in a 2x2 Grid Layout:
     - Image A (Baseline / Natural) : Puppy + Disappearing Diagonal Patch (Top-Left)
@@ -51,34 +51,30 @@ def run_puppy_directional_difference_demo(image_path=None, figsize=(10, 9), dpi=
 
     diff_appeared = compute_difference_masks({0: tensor_a}, {0: tensor_b}, mode="appeared")[0][0].numpy()
     diff_disappeared = compute_difference_masks({0: tensor_a}, {0: tensor_b}, mode="disappeared")[0][0].numpy()
-
     fig, axes = plt.subplots(2, 2, figsize=figsize, dpi=dpi)
-    fig.suptitle("Spatial Directional Difference Mask Isolation (Puppy Demonstration)", fontsize=14, fontweight="bold", y=0.98)
 
-    # Panel (0, 0): Modified Image A (Baseline)
+    # Panel (0, 0): Image A
     axes[0, 0].imshow(img_a, cmap="gray", vmin=0, vmax=1)
-    axes[0, 0].set_title("Image A (Baseline / Natural)\nPuppy + Diagonal Patch (Top-Left)", fontsize=10, fontweight="bold", pad=8)
+    axes[0, 0].set_title("(a) Image A ($I_A$)", fontsize=11, fontweight="bold", pad=6)
     axes[0, 0].axis("off")
 
-    # Panel (0, 1): Modified Image B (Target)
+    # Panel (0, 1): Image B
     axes[0, 1].imshow(img_b, cmap="gray", vmin=0, vmax=1)
-    axes[0, 1].set_title("Image B (Target / Fine-Tuned / Screen)\nPuppy + Horizontal Patch (Bottom-Right)", fontsize=10, fontweight="bold", pad=8)
+    axes[0, 1].set_title("(b) Image B ($I_B$)", fontsize=11, fontweight="bold", pad=6)
     axes[0, 1].axis("off")
 
-    # Panel (1, 0): Appeared Features Mask (+)
-    im2 = axes[1, 0].imshow(diff_appeared, cmap="hot", vmin=0, vmax=0.7)
-    axes[1, 0].set_title("Appeared Features Mask (+)\nReLU(I_B - I_A) [Newly Added Feature]", fontsize=10, fontweight="bold", pad=8)
+    # Panel (1, 0): Appeared Features Mask
+    axes[1, 0].imshow(diff_appeared, cmap="hot", vmin=0, vmax=0.7)
+    axes[1, 0].set_title("(c) Appeared Features", fontsize=11, fontweight="bold", pad=6)
     axes[1, 0].axis("off")
-    plt.colorbar(im2, ax=axes[1, 0], fraction=0.046, pad=0.04)
 
-    # Panel (1, 1): Disappeared Features Mask (-)
-    im3 = axes[1, 1].imshow(diff_disappeared, cmap="hot", vmin=0, vmax=0.7)
-    axes[1, 1].set_title("Disappeared Features Mask (-)\nReLU(I_A - I_B) [Erased / Lost Feature]", fontsize=10, fontweight="bold", pad=8)
+    # Panel (1, 1): Disappeared Features Mask
+    axes[1, 1].imshow(diff_disappeared, cmap="hot", vmin=0, vmax=0.7)
+    axes[1, 1].set_title("(d) Disappeared Features", fontsize=11, fontweight="bold", pad=6)
     axes[1, 1].axis("off")
-    plt.colorbar(im3, ax=axes[1, 1], fraction=0.046, pad=0.04)
 
     plt.tight_layout()
-    plt.subplots_adjust(top=0.90, hspace=0.3, wspace=0.2)
+    plt.subplots_adjust(hspace=0.25, wspace=0.12)
     if save_path:
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
         plt.savefig(save_path)

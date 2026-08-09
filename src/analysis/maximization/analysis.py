@@ -75,7 +75,7 @@ def analyze_layer_drift(patterns_a, patterns_b, layer_name="Layer", pair_labels=
         'least_drifted_filter': common_indices[np.argmax(ssim_list)]
     }
     
-    print(f"\n======== STATISTICAL ANALYSIS FOR {layer_name.upper()} ({pair_labels[0]} vs {pair_labels[1]}) ========")
+    print(f"\n======== STATISTICAL DRIFT ANALYSIS FOR {layer_name.upper()} ({pair_labels[1]} - {pair_labels[0]}) ========")
     print(f"Total Filters Evaluated : {len(common_indices)}")
     print(f"Layer Average SSIM      : {summary_stats['avg_ssim']:.4f}")
     print(f"Layer Average Total MAE : {summary_stats['avg_mae']:.6f}")
@@ -255,11 +255,12 @@ def _step1_preprocess(image_data):
     dx = (w - size) // 2
     return gray[dy:dy+size, dx:dx+size]
 
-def compute_fourier_spectrum(image_gray, dc_radius=5, use_log=False):
+def compute_fourier_spectrum(image_gray, dc_radius=5, delta=21, use_log=False):
     """
     Step 2: Apply a circular spatial mask, compute 2D FFT, and calculate
     Normalized Difference Index (NDI) across cardinal and oblique sectors.
     Optionally computes NDI using log-magnitude spectrum when use_log=True or linear magnitude spectrum when use_log=False.
+    The angular sector window size is configurable via `delta` (default 21°).
     """
     h, w = image_gray.shape
     cy, cx = h // 2, w // 2
@@ -281,16 +282,18 @@ def compute_fourier_spectrum(image_gray, dc_radius=5, use_log=False):
     log_magnitude = np.log(1 + magnitude)
     
     # 3. Frequency sector masks (exclude DC center component and corner un-inscribed frequencies)
-    # Using canonical literature measurement windows (+/- 21° around target centers):
-    # Cardinal: 0°/180° ± 21° and 90° ± 21° (Total bandwidth = 84°)
-    # Oblique: 45° ± 21° and 135° ± 21°    (Total bandwidth = 84°)
+    # Measurement windows: ± delta degrees around target centers (default delta = 21°)
     Y_grid, X_grid = np.indices((h, w))
     theta = np.degrees(np.arctan2(cy - Y_grid, X_grid - cx)) % 180
     R = dist_from_center
     
     mask_dc = (R > dc_radius) & (R <= radius)
-    mask_cardinal = ((theta < 21) | (theta > 159) | ((theta > 69) & (theta < 111))) & mask_dc
-    mask_oblique = (((theta >= 24) & (theta <= 66)) | ((theta >= 114) & (theta <= 156))) & mask_dc
+    c_low, c_high = 90 - delta, 90 + delta
+    o1_low, o1_high = 45 - delta, 45 + delta
+    o2_low, o2_high = 135 - delta, 135 + delta
+
+    mask_cardinal = ((theta < delta) | (theta > 180 - delta) | ((theta > c_low) & (theta < c_high))) & mask_dc
+    mask_oblique = (((theta >= o1_low) & (theta <= o1_high)) | ((theta >= o2_low) & (theta <= o2_high))) & mask_dc
     
     spectrum = log_magnitude if use_log else magnitude
     
@@ -305,17 +308,17 @@ def compute_fourier_spectrum(image_gray, dc_radius=5, use_log=False):
         
     return magnitude, log_magnitude, ndi
 
-def compute_rotational_anisotropy(image_data, dc_radius=5, use_log=True):
+def compute_rotational_anisotropy(image_data, dc_radius=5, delta=21, use_log=True):
     """
     Preprocesses image data (grayscale + square crop) and computes Fourier NDI metrics.
     Optionally returns log-magnitude spectrum when use_log=True or linear magnitude spectrum when use_log=False.
     """
     image_gray = _step1_preprocess(image_data)
-    mag, log_mag, ndi = compute_fourier_spectrum(image_gray, dc_radius=dc_radius, use_log=use_log)
+    mag, log_mag, ndi = compute_fourier_spectrum(image_gray, dc_radius=dc_radius, delta=delta, use_log=use_log)
     spectrum = log_mag if use_log else mag
     return spectrum, ndi
 
-def plot_fourier_diagnostic(image_data, title="Fourier Diagnostic", dc_radius=5, log_scale=False, use_log=False, figsize=(18, 4.5)):
+def plot_fourier_diagnostic(image_data, title="Fourier Diagnostic", dc_radius=5, delta=21, log_scale=False, use_log=False, figsize=(18, 4.5)):
     """
     Generates a 4-panel visual diagnostic figure:
     1. Spatial Image (Circular Masked)
@@ -324,7 +327,7 @@ def plot_fourier_diagnostic(image_data, title="Fourier Diagnostic", dc_radius=5,
     4. 1D Angular Energy Distribution Plot across 0°, 45°, 90°, 135°, 180° (with optional log_scale/use_log)
     """
     image_gray = _step1_preprocess(image_data)
-    magnitude, log_mag, ndi = compute_fourier_spectrum(image_gray, dc_radius=dc_radius, use_log=use_log)
+    magnitude, log_mag, ndi = compute_fourier_spectrum(image_gray, dc_radius=dc_radius, delta=delta, use_log=use_log)
     spectrum = log_mag if use_log else magnitude
     
     h, w = image_gray.shape
@@ -336,8 +339,12 @@ def plot_fourier_diagnostic(image_data, title="Fourier Diagnostic", dc_radius=5,
     max_radius = min(h, w) / 2.0
     
     mask_dc = (R > dc_radius) & (R <= max_radius)
-    mask_cardinal = ((theta < 21) | (theta > 159) | ((theta > 69) & (theta < 111))) & mask_dc
-    mask_oblique = (((theta >= 24) & (theta <= 66)) | ((theta >= 114) & (theta <= 156))) & mask_dc
+    c_low, c_high = 90 - delta, 90 + delta
+    o1_low, o1_high = 45 - delta, 45 + delta
+    o2_low, o2_high = 135 - delta, 135 + delta
+
+    mask_cardinal = ((theta < delta) | (theta > 180 - delta) | ((theta > c_low) & (theta < c_high))) & mask_dc
+    mask_oblique = (((theta >= o1_low) & (theta <= o1_high)) | ((theta >= o2_low) & (theta <= o2_high))) & mask_dc
     
     # Calculate 1D Angular Energy Profile
     angles = np.arange(0, 180, 2)
@@ -385,12 +392,12 @@ def plot_fourier_diagnostic(image_data, title="Fourier Diagnostic", dc_radius=5,
     
     # Panel 4: 1D Angular Energy Distribution
     axes[3].plot(angles, angular_energy, color='darkgreen', lw=2)
-    axes[3].axvspan(0, 21, color='red', alpha=0.2, label='Cardinal (0°/180° ±21°)')
-    axes[3].axvspan(69, 111, color='red', alpha=0.2, label='Cardinal (90° ±21°)')
-    axes[3].axvspan(159, 180, color='red', alpha=0.2)
+    axes[3].axvspan(0, delta, color='red', alpha=0.2, label=f'Cardinal (0°/180° ±{delta}°)')
+    axes[3].axvspan(c_low, c_high, color='red', alpha=0.2, label=f'Cardinal (90° ±{delta}°)')
+    axes[3].axvspan(180 - delta, 180, color='red', alpha=0.2)
     
-    axes[3].axvspan(24, 66, color='blue', alpha=0.2, label='Oblique (45° ±21°)')
-    axes[3].axvspan(114, 156, color='blue', alpha=0.2, label='Oblique (135° ±21°)')
+    axes[3].axvspan(o1_low, o1_high, color='blue', alpha=0.2, label=f'Oblique (45° ±{delta}°)')
+    axes[3].axvspan(o2_low, o2_high, color='blue', alpha=0.2, label=f'Oblique (135° ±{delta}°)')
     
     axes[3].set_xticks([0, 45, 90, 135, 180])
     axes[3].set_xlim(0, 180)
@@ -413,19 +420,19 @@ def plot_fourier_diagnostic(image_data, title="Fourier Diagnostic", dc_radius=5,
     plt.show()
     return fig
 
-def analyze_layer_filters(filter_images, dc_radius=5, use_log=True):
+def analyze_layer_filters(filter_images, dc_radius=5, delta=21, use_log=True):
     """Averages spectral transformations and NDI anisotropy across all channels in a target layer."""
     if len(filter_images) == 0:
         return np.zeros((80, 80)), 0.0
 
-    sample_spec, _ = compute_rotational_anisotropy(filter_images[0], dc_radius=dc_radius, use_log=use_log)
+    sample_spec, _ = compute_rotational_anisotropy(filter_images[0], dc_radius=dc_radius, delta=delta, use_log=use_log)
     h, w = sample_spec.shape
     
     avg_spectrum = np.zeros((h, w), dtype=np.float64)
     anisotropy_scores = []
     
     for img in filter_images:
-        spec, ndi = compute_rotational_anisotropy(img, dc_radius=dc_radius, use_log=use_log)
+        spec, ndi = compute_rotational_anisotropy(img, dc_radius=dc_radius, delta=delta, use_log=use_log)
         avg_spectrum += spec
         anisotropy_scores.append(ndi)
         
@@ -435,7 +442,7 @@ def analyze_layer_filters(filter_images, dc_radius=5, use_log=True):
     return avg_spectrum, avg_anisotropy
 
 
-def compute_layer_angular_distribution(filter_images, dc_radius=5, use_log=False):
+def compute_layer_angular_distribution(filter_images, dc_radius=5, delta=21, use_log=False):
     """
     Computes averaged 1D angular energy distribution profile and NDI anisotropy score
     across all filter images in a target layer.
@@ -459,7 +466,7 @@ def compute_layer_angular_distribution(filter_images, dc_radius=5, use_log=False
 
     for img in filter_images:
         image_gray = _step1_preprocess(img)
-        magnitude, log_mag, ndi = compute_fourier_spectrum(image_gray, dc_radius=dc_radius, use_log=use_log)
+        magnitude, log_mag, ndi = compute_fourier_spectrum(image_gray, dc_radius=dc_radius, delta=delta, use_log=use_log)
         anisotropy_scores.append(ndi)
 
         spectrum = log_mag if use_log else magnitude
@@ -478,7 +485,7 @@ def compute_layer_angular_distribution(filter_images, dc_radius=5, use_log=False
     return angles, avg_angular_energy, avg_anisotropy
 
 
-def plot_fourier_cmap_grid(filter_data, models, layers, dc_radius=5, log_scale=False, use_log=True, figsize=(14, 11), dpi=150):
+def plot_fourier_cmap_grid(filter_data, models, layers, dc_radius=5, delta=21, log_scale=False, use_log=True, figsize=(14, 11), dpi=150):
     """
     Plots a grid (len(models) x len(layers)) of averaged 2D Fourier Magnitude Spectra (CMAP).
     Optionally toggles log-magnitude transformation via use_log=True (default True).
@@ -496,7 +503,7 @@ def plot_fourier_cmap_grid(filter_data, models, layers, dc_radius=5, log_scale=F
             images_list = filter_data[model_name][layer_name]
 
             # Process structural metrics
-            avg_spectrum, anisotropy_index = analyze_layer_filters(images_list, dc_radius=dc_radius, use_log=use_log)
+            avg_spectrum, anisotropy_index = analyze_layer_filters(images_list, dc_radius=dc_radius, delta=delta, use_log=use_log)
             anisotropy_results[model_name][layer_name] = anisotropy_index
 
             # Plot spectrum maps
@@ -534,7 +541,7 @@ def plot_fourier_cmap_grid(filter_data, models, layers, dc_radius=5, log_scale=F
     return anisotropy_results
 
 
-def plot_fourier_angular_distribution_grid(filter_data, models, layers, dc_radius=5, log_scale=False, use_log=False, plot_differences=True, figsize=(16, 11), dpi=150):
+def plot_fourier_angular_distribution_grid(filter_data, models, layers, dc_radius=5, delta=21, log_scale=False, use_log=False, plot_differences=True, figsize=(16, 11), dpi=150):
     """
     Plots a grid (len(models) x len(layers)) of averaged 1D Angular Energy Distributions.
     Highlights Cardinal (0°/180°, 90°) and Oblique (45°, 135°) angular sectors.
@@ -548,25 +555,31 @@ def plot_fourier_angular_distribution_grid(filter_data, models, layers, dc_radiu
     fig, axs = plt.subplots(len(models), len(layers), figsize=figsize, dpi=dpi)
     fig.suptitle("Layer-wise 1D Angular Energy Distribution & Anisotropy Index Metrics", fontsize=16, y=0.96)
 
+    c_low, c_high = 90 - delta, 90 + delta
+    o1_low, o1_high = 45 - delta, 45 + delta
+    o2_low, o2_high = 135 - delta, 135 + delta
+
     for i, model_name in enumerate(models):
         for j, layer_name in enumerate(layers):
             images_list = filter_data[model_name][layer_name]
 
-            angles, avg_angular_energy, anisotropy_index = compute_layer_angular_distribution(images_list, dc_radius=dc_radius, use_log=use_log)
+            angles, avg_angular_energy, anisotropy_index = compute_layer_angular_distribution(images_list, dc_radius=dc_radius, delta=delta, use_log=use_log)
             anisotropy_results[model_name][layer_name] = anisotropy_index
 
             ax = axs[i, j] if len(models) > 1 and len(layers) > 1 else (axs[i] if len(models) > 1 else axs[j])
 
             # Plot 1D energy profile
-            ax.plot(angles, avg_angular_energy, color='darkgreen', lw=2)
+            ax.plot(angles, avg_angular_energy, color='darkgreen', lw=2, label="Profile")
 
-            # Highlight Cardinal (red) and Oblique (blue) sectors (±21° literature measurement windows)
-            ax.axvspan(0, 21, color='red', alpha=0.2, label='Cardinal (0°/180°)' if (i == 0 and j == 0) else "")
-            ax.axvspan(69, 111, color='red', alpha=0.2, label='Cardinal (90°)' if (i == 0 and j == 0) else "")
-            ax.axvspan(159, 180, color='red', alpha=0.2)
+            # Highlight Cardinal (red) and Oblique (blue) sectors
+            ax.axvspan(0, delta, color='red', alpha=0.2, label=f'Cardinal (±{delta}°)')
+            ax.axvspan(c_low, c_high, color='red', alpha=0.2)
+            ax.axvspan(180 - delta, 180, color='red', alpha=0.2)
 
-            ax.axvspan(24, 66, color='blue', alpha=0.2, label='Oblique (45°)' if (i == 0 and j == 0) else "")
-            ax.axvspan(114, 156, color='blue', alpha=0.2, label='Oblique (135°)' if (i == 0 and j == 0) else "")
+            ax.axvspan(o1_low, o1_high, color='blue', alpha=0.2, label=f'Oblique (±{delta}°)')
+            ax.axvspan(o2_low, o2_high, color='blue', alpha=0.2)
+
+            ax.legend(fontsize=7, loc='upper right', framealpha=0.8)
 
             ax.set_xticks([0, 45, 90, 135, 180])
             ax.set_xlim(0, 180)
@@ -587,13 +600,8 @@ def plot_fourier_angular_distribution_grid(filter_data, models, layers, dc_radiu
             if i == len(models) - 1:
                 ax.set_xlabel("Angle θ (degrees)", fontsize=9)
 
-    # Add single legend for the figure
-    handles, labels = axs[0, 0].get_legend_handles_labels()
-    if handles:
-        fig.legend(handles, labels, loc='upper right', bbox_to_anchor=(0.99, 0.95), fontsize=9)
-
     plt.tight_layout()
-    plt.subplots_adjust(top=0.88)
+    plt.subplots_adjust(top=0.90)
     plt.show()
 
     # Print out summary text table
@@ -607,12 +615,12 @@ def plot_fourier_angular_distribution_grid(filter_data, models, layers, dc_radiu
         print("-"*54)
 
     if plot_differences and "natural" in filter_data:
-        plot_fourier_angular_difference_grid(filter_data, layers, dc_radius=dc_radius, use_log=use_log, dpi=dpi)
+        plot_fourier_angular_difference_grid(filter_data, layers, dc_radius=dc_radius, delta=delta, use_log=use_log, dpi=dpi)
 
     return anisotropy_results
 
 
-def plot_fourier_angular_difference_grid(filter_data, layers, dc_radius=5, use_log=False, figsize=(16, 8), dpi=150):
+def plot_fourier_angular_difference_grid(filter_data, layers, dc_radius=5, delta=21, use_log=False, figsize=(16, 8), dpi=150):
     """
     Plots a grid (2 x len(layers)) of 1D Angular Energy Difference Profiles:
     - Row 1: Fine-Tuned minus Natural (FT - NAT)
@@ -631,14 +639,17 @@ def plot_fourier_angular_difference_grid(filter_data, layers, dc_radius=5, use_l
     fig.suptitle("Layer-wise 1D Angular Energy Difference Profiles (Domain Drift Shift)", fontsize=16, y=0.96)
 
     table_data = []
+    c_low, c_high = 90 - delta, 90 + delta
+    o1_low, o1_high = 45 - delta, 45 + delta
+    o2_low, o2_high = 135 - delta, 135 + delta
 
     for i, (model_b_name, model_a_name, pair_title) in enumerate(diff_pairs):
         for j, layer_name in enumerate(layers):
             images_a = filter_data[model_a_name][layer_name]
             images_b = filter_data[model_b_name][layer_name]
 
-            angles, energy_a, ndi_a = compute_layer_angular_distribution(images_a, dc_radius=dc_radius, use_log=use_log)
-            angles, energy_b, ndi_b = compute_layer_angular_distribution(images_b, dc_radius=dc_radius, use_log=use_log)
+            angles, energy_a, ndi_a = compute_layer_angular_distribution(images_a, dc_radius=dc_radius, delta=delta, use_log=use_log)
+            angles, energy_b, ndi_b = compute_layer_angular_distribution(images_b, dc_radius=dc_radius, delta=delta, use_log=use_log)
 
             diff_energy = energy_b - energy_a
             delta_ndi = ndi_b - ndi_a
@@ -657,13 +668,15 @@ def plot_fourier_angular_difference_grid(filter_data, layers, dc_radius=5, use_l
             ax.fill_between(angles, diff_energy, 0, where=(diff_energy >= 0), color=color, alpha=0.15)
             ax.fill_between(angles, diff_energy, 0, where=(diff_energy < 0), color='gray', alpha=0.15)
 
-            # Highlight Cardinal (red) and Oblique (blue) sectors (±21° literature measurement windows)
-            ax.axvspan(0, 21, color='red', alpha=0.15, label='Cardinal (0°/180°)' if (i == 0 and j == 0) else "")
-            ax.axvspan(69, 111, color='red', alpha=0.15, label='Cardinal (90°)' if (i == 0 and j == 0) else "")
-            ax.axvspan(159, 180, color='red', alpha=0.15)
+            # Highlight Cardinal (red) and Oblique (blue) sectors
+            ax.axvspan(0, delta, color='red', alpha=0.15, label=f'Cardinal (±{delta}°)')
+            ax.axvspan(c_low, c_high, color='red', alpha=0.15)
+            ax.axvspan(180 - delta, 180, color='red', alpha=0.15)
 
-            ax.axvspan(24, 66, color='blue', alpha=0.15, label='Oblique (45°)' if (i == 0 and j == 0) else "")
-            ax.axvspan(114, 156, color='blue', alpha=0.15, label='Oblique (135°)' if (i == 0 and j == 0) else "")
+            ax.axvspan(o1_low, o1_high, color='blue', alpha=0.15, label=f'Oblique (±{delta}°)')
+            ax.axvspan(o2_low, o2_high, color='blue', alpha=0.15)
+
+            ax.legend(fontsize=7, loc='upper right', framealpha=0.8)
 
             ax.set_xticks([0, 45, 90, 135, 180])
             ax.set_xlim(0, 180)
@@ -681,23 +694,18 @@ def plot_fourier_angular_difference_grid(filter_data, layers, dc_radius=5, use_l
             if i == len(diff_pairs) - 1:
                 ax.set_xlabel("Angle θ (degrees)", fontsize=9)
 
-    # Add single legend for the figure
-    handles, labels = axs[0, 0].get_legend_handles_labels()
-    if handles:
-        fig.legend(handles, labels, loc='upper right', bbox_to_anchor=(0.99, 0.95), fontsize=9)
-
     plt.tight_layout()
-    plt.subplots_adjust(top=0.88)
+    plt.subplots_adjust(top=0.90)
     plt.show()
 
     # Print summary text table
-    print("\n" + "="*68)
-    print(f"{'LAYER':<16} | {'COMPARISON (B vs A)':<24} | {'NDI (B)':<9} | {'NDI (A)':<9} | {'Δ NDI':<8}")
-    print("="*68)
+    print("\n" + "="*76)
+    print(f"{'LAYER':<16} | {'SUBTRACTION PAIR (B - A)':<30} | {'NDI (B)':<9} | {'NDI (A)':<9} | {'Δ NDI (B-A)':<10}")
+    print("="*76)
     for l_name, m_b, m_a, n_b, n_a, d_ndi in table_data:
-        comp_str = f"{m_b} vs {m_a}"
-        print(f"FEATURES.{l_name}.CONV | {comp_str:<24} | {n_b:9.4f} | {n_a:9.4f} | {d_ndi:+8.4f}")
-        print("-" * 68)
+        comp_str = f"{m_b} - {m_a}"
+        print(f"FEATURES.{l_name}.CONV | {comp_str:<30} | {n_b:9.4f} | {n_a:9.4f} | {d_ndi:+10.4f}")
+        print("-" * 76)
 
     return table_data
 
@@ -712,6 +720,7 @@ def analyze_difference_masks_fourier(
     pairs=None,
     mode="all",
     dc_radius=5,
+    delta=21,
     log_scale=False,
     use_log=False,
     figsize=(16, 10),
@@ -720,15 +729,6 @@ def analyze_difference_masks_fourier(
     """
     Applies the full 2D and 1D Fourier spectral analysis sequence and NDI Anisotropy Index metrics
     directly to spatial DIFFERENCE MASKS across model domain pairs.
-    
-    Parameters:
-    -----------
-    mode : str
-        - "all" / "separate" : Analyzes APPEARED Features (ReLU(I_B - I_A)), DISAPPEARED Features (ReLU(I_A - I_B)),
-                                and ABSOLUTE Total Differences (|I_B - I_A|) separately.
-        - "appeared"        : Analyzes newly introduced features in model B.
-        - "disappeared"     : Analyzes erased features from baseline model A.
-        - "absolute"        : Analyzes unsigned total difference magnitude.
     """
     if pairs is None:
         pairs = [
@@ -768,6 +768,7 @@ def analyze_difference_masks_fourier(
             models=diff_models,
             layers=layers,
             dc_radius=dc_radius,
+            delta=delta,
             log_scale=log_scale,
             use_log=use_log,
             plot_differences=False,
@@ -779,7 +780,7 @@ def analyze_difference_masks_fourier(
     return results if len(modes_to_run) > 1 else results[modes_to_run[0]]
 
 
-def plot_synthetic_fourier_difference_demo(dc_radius=5, use_log=False, figsize=(16, 4.5), dpi=150):
+def plot_synthetic_fourier_difference_demo(dc_radius=5, delta=21, use_log=False, figsize=(16, 4.5), dpi=150):
     """
     Generates a synthetic demonstration using two controlled 2D spatial gratings:
     - Image 1: 90° frequency energy (horizontal spatial grating)
@@ -787,7 +788,6 @@ def plot_synthetic_fourier_difference_demo(dc_radius=5, use_log=False, figsize=(
 
     Plots individual 1D Angular Energy distributions and calculates the resulting
     difference profile ΔEnergy = Energy_45° - Energy_90°.
-    Optionally computes energy distributions with use_log=True or linear magnitude with use_log=False.
     """
     h, w = 120, 120
     y, x = np.indices((h, w))
@@ -798,12 +798,16 @@ def plot_synthetic_fourier_difference_demo(dc_radius=5, use_log=False, figsize=(
     # Image 2: 45° frequency energy (diagonal spatial grating x+y)
     img_45 = np.sin(2 * np.pi * 0.15 * (x + y) / np.sqrt(2))
 
-    mag_90, log_90, ndi_90 = compute_fourier_spectrum(img_90, dc_radius=dc_radius, use_log=use_log)
-    mag_45, log_45, ndi_45 = compute_fourier_spectrum(img_45, dc_radius=dc_radius, use_log=use_log)
+    mag_90, log_90, ndi_90 = compute_fourier_spectrum(img_90, dc_radius=dc_radius, delta=delta, use_log=use_log)
+    mag_45, log_45, ndi_45 = compute_fourier_spectrum(img_45, dc_radius=dc_radius, delta=delta, use_log=use_log)
 
-    angles, energy_90, _ = compute_layer_angular_distribution([img_90], dc_radius=dc_radius, use_log=use_log)
-    angles, energy_45, _ = compute_layer_angular_distribution([img_45], dc_radius=dc_radius, use_log=use_log)
+    angles, energy_90, _ = compute_layer_angular_distribution([img_90], dc_radius=dc_radius, delta=delta, use_log=use_log)
+    angles, energy_45, _ = compute_layer_angular_distribution([img_45], dc_radius=dc_radius, delta=delta, use_log=use_log)
     diff_energy = energy_45 - energy_90
+
+    c_low, c_high = 90 - delta, 90 + delta
+    o1_low, o1_high = 45 - delta, 45 + delta
+    o2_low, o2_high = 135 - delta, 135 + delta
 
     fig, axes = plt.subplots(1, 3, figsize=figsize, dpi=dpi)
     fig.suptitle("Synthetic Demonstration: 90° vs 45° Spectral Energy Shift", fontsize=14, fontweight="bold")
@@ -817,11 +821,11 @@ def plot_synthetic_fourier_difference_demo(dc_radius=5, use_log=False, figsize=(
     # Panel 2: 1D Angular Energy Distributions
     axes[1].plot(angles, energy_90, color="darkgreen", lw=2, label="90° Grating (Cardinal)")
     axes[1].plot(angles, energy_45, color="darkorange", lw=2, label="45° Grating (Oblique)")
-    axes[1].axvspan(0, 10, color="red", alpha=0.15)
-    axes[1].axvspan(80, 100, color="red", alpha=0.15, label="Cardinal Bins")
-    axes[1].axvspan(170, 180, color="red", alpha=0.15)
-    axes[1].axvspan(35, 55, color="blue", alpha=0.15, label="Oblique Bins")
-    axes[1].axvspan(125, 145, color="blue", alpha=0.15)
+    axes[1].axvspan(0, delta, color="red", alpha=0.15)
+    axes[1].axvspan(c_low, c_high, color="red", alpha=0.15, label=f"Cardinal (±{delta}°)")
+    axes[1].axvspan(180 - delta, 180, color="red", alpha=0.15)
+    axes[1].axvspan(o1_low, o1_high, color="blue", alpha=0.15, label=f"Oblique (±{delta}°)")
+    axes[1].axvspan(o2_low, o2_high, color="blue", alpha=0.15)
     axes[1].set_xticks([0, 45, 90, 135, 180])
     axes[1].set_xlim(0, 180)
     axes[1].set_ylim(0, 1.05)
@@ -836,11 +840,11 @@ def plot_synthetic_fourier_difference_demo(dc_radius=5, use_log=False, figsize=(
     axes[2].axhline(0, color="black", linestyle="--", alpha=0.6, lw=1)
     axes[2].fill_between(angles, diff_energy, 0, where=(diff_energy >= 0), color="purple", alpha=0.2)
     axes[2].fill_between(angles, diff_energy, 0, where=(diff_energy < 0), color="gray", alpha=0.2)
-    axes[2].axvspan(0, 10, color="red", alpha=0.15)
-    axes[2].axvspan(80, 100, color="red", alpha=0.15)
-    axes[2].axvspan(170, 180, color="red", alpha=0.15)
-    axes[2].axvspan(35, 55, color="blue", alpha=0.15)
-    axes[2].axvspan(125, 145, color="blue", alpha=0.15)
+    axes[2].axvspan(0, delta, color="red", alpha=0.15)
+    axes[2].axvspan(c_low, c_high, color="red", alpha=0.15)
+    axes[2].axvspan(180 - delta, 180, color="red", alpha=0.15)
+    axes[2].axvspan(o1_low, o1_high, color="blue", alpha=0.15)
+    axes[2].axvspan(o2_low, o2_high, color="blue", alpha=0.15)
     axes[2].set_xticks([0, 45, 90, 135, 180])
     axes[2].set_xlim(0, 180)
     axes[2].set_ylim(-1.1, 1.1)
