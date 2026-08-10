@@ -327,13 +327,24 @@ def compute_rotational_anisotropy(image_data, dc_radius=5, delta=21, use_log=Tru
     spectrum = log_mag if use_log else mag
     return spectrum, ndi
 
+def _get_subplot_letter(index):
+    """Generates subfigure lettering (a), (b), ..., (z), (aa), (ab)..."""
+    if index < 26:
+        return chr(ord('a') + index)
+    else:
+        first = chr(ord('a') + (index // 26) - 1)
+        second = chr(ord('a') + (index % 26))
+        return f"{first}{second}"
+
+
 def plot_fourier_diagnostic(image_data, title="Fourier Diagnostic", dc_radius=5, delta=21, log_scale=False, use_log=False, figsize=(18, 4.5)):
     """
     Generates a 4-panel visual diagnostic figure:
-    1. Spatial Image (Circular Masked)
-    2. Log Magnitude Fourier Spectrum
-    3. Cardinal (Red) vs Oblique (Blue) Sector Overlay
-    4. 1D Angular Energy Distribution Plot across 0°, 45°, 90°, 135°, 180° (with optional log_scale/use_log)
+    (a) Spatial Image (Circular Masked)
+    (b) Log Magnitude Fourier Spectrum
+    (c) Cardinal (Red) vs Oblique (Blue) Sector Overlay
+    (d) 1D Angular Energy Distribution Plot
+    Prints a legend mapping table before displaying the plot.
     """
     image_gray = _step1_preprocess(image_data)
     magnitude, log_mag, ndi = compute_fourier_spectrum(image_gray, dc_radius=dc_radius, delta=delta, use_log=use_log)
@@ -371,12 +382,12 @@ def plot_fourier_diagnostic(image_data, title="Fourier Diagnostic", dc_radius=5,
     circular_mask = R <= max_radius
     masked_img = image_gray * circular_mask
     axes[0].imshow(masked_img, cmap='gray')
-    axes[0].set_title(f"Spatial Image\n({title})", fontsize=11, fontweight='bold')
+    axes[0].set_title("(a)", fontsize=11, fontweight='bold')
     axes[0].axis('off')
     
     # Panel 2: Log Magnitude Spectrum
     im1 = axes[1].imshow(log_mag, cmap='magma')
-    axes[1].set_title("Log Magnitude Spectrum", fontsize=11, fontweight='bold')
+    axes[1].set_title("(b)", fontsize=11, fontweight='bold')
     axes[1].axis('off')
     plt.colorbar(im1, ax=axes[1], fraction=0.046, pad=0.04)
     
@@ -396,7 +407,7 @@ def plot_fourier_diagnostic(image_data, title="Fourier Diagnostic", dc_radius=5,
     overlay[mask_oblique, 1] *= 0.3
     
     axes[2].imshow(overlay)
-    axes[2].set_title(f"Sector Overlay\nNDI = {ndi:.4f}", fontsize=11, fontweight='bold')
+    axes[2].set_title("(c)", fontsize=11, fontweight='bold')
     axes[2].axis('off')
     
     # Panel 4: 1D Angular Energy Distribution
@@ -421,10 +432,20 @@ def plot_fourier_diagnostic(image_data, title="Fourier Diagnostic", dc_radius=5,
         axes[3].set_ylabel("Norm. Energy", fontsize=9)
 
     axes[3].set_xlabel("Angle θ (degrees)", fontsize=9)
-    axes[3].set_title("Angular Energy Distribution", fontsize=11, fontweight='bold')
+    axes[3].set_title("(d)", fontsize=11, fontweight='bold')
     axes[3].grid(True, linestyle='--', alpha=0.5)
     axes[3].legend(fontsize=7, loc='upper right')
     
+    # Print out subplot legend mapping table before plotting
+    print("\n" + "="*70)
+    print(f"📊 FOURIER DIAGNOSTIC SUBPLOT LEGEND MAPPING: ({title})")
+    print("="*70)
+    print("  (a) Spatial Image (Grayscale & Masked)")
+    print("  (b) 2D Log Magnitude Fourier Spectrum")
+    print(f"  (c) Cardinal & Oblique Sector Overlay (NDI = {ndi:.4f})")
+    print("  (d) 1D Angular Energy Distribution Profile")
+    print("="*70 + "\n")
+
     plt.tight_layout()
     plt.show()
     return fig
@@ -500,13 +521,15 @@ def plot_fourier_cmap_grid(filter_data, models, layers, dc_radius=5, delta=21, l
     Optionally toggles log-magnitude transformation via use_log=True (default True).
     Optionally applies log-scale color normalization via log_scale=True.
     Prints a summary text table of Anisotropy Index (NDI) for each model & layer.
+    Subfigure panels are titled (a), (b), (c)... with a mapping legend printed to terminal stdout.
     """
     anisotropy_results = {m: {} for m in models}
 
     title_prefix = "Log-Magnitude" if use_log else "Linear Magnitude"
-    print(f"\n📊 Layer-wise 2D Fourier {title_prefix} Spectra Analysis & Anisotropy Index Metrics\n")
     fig, axs = plt.subplots(len(models), len(layers), figsize=figsize, dpi=dpi)
 
+    k = 0
+    legend_entries = []
     for i, model_name in enumerate(models):
         for j, layer_name in enumerate(layers):
             images_list = filter_data[model_name][layer_name]
@@ -514,6 +537,10 @@ def plot_fourier_cmap_grid(filter_data, models, layers, dc_radius=5, delta=21, l
             # Process structural metrics
             avg_spectrum, anisotropy_index = analyze_layer_filters(images_list, dc_radius=dc_radius, delta=delta, use_log=use_log)
             anisotropy_results[model_name][layer_name] = anisotropy_index
+
+            letter = _get_subplot_letter(k)
+            legend_entries.append((letter, model_name.upper(), f"FEATURES.{layer_name.upper()}.CONV", anisotropy_index))
+            k += 1
 
             # Plot spectrum maps
             ax = axs[i, j] if len(models) > 1 and len(layers) > 1 else (axs[i] if len(models) > 1 else axs[j])
@@ -526,25 +553,25 @@ def plot_fourier_cmap_grid(filter_data, models, layers, dc_radius=5, delta=21, l
             else:
                 im = ax.imshow(avg_spectrum, cmap='magma')
 
-            ax.set_title(f"Model: {model_name.upper()}\nFeatures.{layer_name}.Conv\n[AI Index: {anisotropy_index:.3f}]", fontsize=10)
+            ax.set_title(f"({letter})", fontsize=11, fontweight='bold', pad=6)
             ax.axis('off')
 
             # Single colorbar anchor per row to prevent visual cluttering
             if j == len(layers) - 1:
                 fig.colorbar(im, ax=ax, shrink=0.7, label='Log Spectral Intensity')
 
+    # Print out subplot legend mapping table before plotting
+    print("\n" + "="*76)
+    print(f"📊 2D FOURIER SPECTRA ({title_prefix.upper()}) SUBPLOT LEGEND MAPPING:")
+    print("="*76)
+    print(f"{'SUBPLOT':<9} | {'MODEL':<14} | {'LAYER':<22} | {'ANISOTROPY INDEX (NDI)':<22}")
+    print("-" * 76)
+    for let, m_name, l_name, score in legend_entries:
+        print(f"({let}){' ':<5} | {m_name:<14} | {l_name:<22} | {score:.4f}")
+    print("="*76 + "\n")
+
     plt.tight_layout()
     plt.show()
-
-    # Print out summary text table
-    print("\n" + "="*54)
-    print(f"{'LAYER CONFIGURATION':<25} | {'MODEL':<12} | {'ANISOTROPY INDEX':<10}")
-    print("="*54)
-    for l in layers:
-        for m in models:
-            score = anisotropy_results[m][l]
-            print(f"FEATURES.{l}.CONV{' ':<11} | {m:<12} | {score:.4f}")
-        print("-"*54)
 
     return anisotropy_results
 
@@ -553,26 +580,28 @@ def plot_fourier_angular_distribution_grid(filter_data, models, layers, dc_radiu
     """
     Plots a grid (len(models) x len(layers)) of averaged 1D Angular Energy Distributions.
     Highlights Cardinal (0°/180°, 90°) and Oblique (45°, 135°) angular sectors.
-    Optionally sets Y-axis to logarithmic scale when log_scale=True.
-    Optionally toggles log-magnitude energy summation via use_log=True (default False for linear magnitude energy).
-    Optionally plots difference profiles (Fine-Tuned vs Natural, Screen vs Natural) when plot_differences=True.
-    Prints a summary text table of Anisotropy Index (NDI) for each model & layer.
+    Subfigure panels are titled (a), (b), (c)... with a mapping legend printed to terminal stdout.
     """
     anisotropy_results = {m: {} for m in models}
 
-    print(f"\n📊 Layer-wise 1D Angular Energy Distribution & Anisotropy Index Metrics\n")
     fig, axs = plt.subplots(len(models), len(layers), figsize=figsize, dpi=dpi)
 
     c_low, c_high = 90 - delta, 90 + delta
     o1_low, o1_high = 45 - delta, 45 + delta
     o2_low, o2_high = 135 - delta, 135 + delta
 
+    k = 0
+    legend_entries = []
     for i, model_name in enumerate(models):
         for j, layer_name in enumerate(layers):
             images_list = filter_data[model_name][layer_name]
 
             angles, avg_angular_energy, anisotropy_index = compute_layer_angular_distribution(images_list, dc_radius=dc_radius, delta=delta, use_log=use_log)
             anisotropy_results[model_name][layer_name] = anisotropy_index
+
+            letter = _get_subplot_letter(k)
+            legend_entries.append((letter, model_name.upper(), f"FEATURES.{layer_name.upper()}.CONV", anisotropy_index))
+            k += 1
 
             ax = axs[i, j] if len(models) > 1 and len(layers) > 1 else (axs[i] if len(models) > 1 else axs[j])
 
@@ -600,7 +629,7 @@ def plot_fourier_angular_distribution_grid(filter_data, models, layers, dc_radiu
             else:
                 ax.set_ylim(0, 1.05)
 
-            ax.set_title(f"Model: {model_name.upper()}\nFeatures.{layer_name}.Conv\n[AI Index: {anisotropy_index:.3f}]", fontsize=10)
+            ax.set_title(f"({letter})", fontsize=11, fontweight='bold', pad=6)
             ax.grid(True, linestyle='--', alpha=0.5)
 
             if j == 0:
@@ -608,18 +637,18 @@ def plot_fourier_angular_distribution_grid(filter_data, models, layers, dc_radiu
             if i == len(models) - 1:
                 ax.set_xlabel("Angle θ (degrees)", fontsize=9)
 
+    # Print out subplot legend mapping table before plotting
+    print("\n" + "="*76)
+    print("📊 1D ANGULAR ENERGY DISTRIBUTION SUBPLOT LEGEND MAPPING:")
+    print("="*76)
+    print(f"{'SUBPLOT':<9} | {'MODEL':<14} | {'LAYER':<22} | {'ANISOTROPY INDEX (NDI)':<22}")
+    print("-" * 76)
+    for let, m_name, l_name, score in legend_entries:
+        print(f"({let}){' ':<5} | {m_name:<14} | {l_name:<22} | {score:.4f}")
+    print("="*76 + "\n")
+
     plt.tight_layout()
     plt.show()
-
-    # Print out summary text table
-    print("\n" + "="*54)
-    print(f"{'LAYER CONFIGURATION':<25} | {'MODEL':<12} | {'ANISOTROPY INDEX':<10}")
-    print("="*54)
-    for l in layers:
-        for m in models:
-            score = anisotropy_results[m][l]
-            print(f"FEATURES.{l}.CONV{' ':<11} | {m:<12} | {score:.4f}")
-        print("-"*54)
 
     if plot_differences and "natural" in filter_data:
         plot_fourier_angular_difference_grid(filter_data, layers, dc_radius=dc_radius, delta=delta, use_log=use_log, dpi=dpi)
@@ -632,17 +661,13 @@ def plot_fourier_angular_difference_grid(filter_data, layers, dc_radius=5, delta
     Plots a grid (2 x len(layers)) of 1D Angular Energy Difference Profiles:
     - Row 1: Fine-Tuned minus Natural (FT - NAT)
     - Row 2: Screen (Scratch) minus Natural (SCR - NAT)
-
-    Highlights Cardinal (0°/180°, 90°) and Oblique (45°, 135°) angular sectors.
-    Includes a reference zero baseline (y=0) and shaded gain/loss areas.
-    Prints a summary text table of NDI scores and NDI shift (ΔNDI).
+    Subfigure panels are titled (a), (b), (c)... with a mapping legend printed to terminal stdout.
     """
     diff_pairs = [
-        ("fine-tuned", "natural", "Diff: FINE-TUNED - NATURAL"),
-        ("screen", "natural", "Diff: SCREEN SCRATCH - NATURAL")
+        ("fine-tuned", "natural", "FINE-TUNED - NATURAL"),
+        ("screen", "natural", "SCREEN SCRATCH - NATURAL")
     ]
 
-    print(f"\n📊 Layer-wise 1D Angular Energy Difference Profiles (Domain Drift Shift)\n")
     fig, axs = plt.subplots(len(diff_pairs), len(layers), figsize=figsize, dpi=dpi)
 
     table_data = []
@@ -650,6 +675,7 @@ def plot_fourier_angular_difference_grid(filter_data, layers, dc_radius=5, delta
     o1_low, o1_high = 45 - delta, 45 + delta
     o2_low, o2_high = 135 - delta, 135 + delta
 
+    k = 0
     for i, (model_b_name, model_a_name, pair_title) in enumerate(diff_pairs):
         for j, layer_name in enumerate(layers):
             images_a = filter_data[model_a_name][layer_name]
@@ -661,7 +687,9 @@ def plot_fourier_angular_difference_grid(filter_data, layers, dc_radius=5, delta
             diff_energy = energy_b - energy_a
             delta_ndi = ndi_b - ndi_a
 
-            table_data.append((layer_name, model_b_name.upper(), model_a_name.upper(), ndi_b, ndi_a, delta_ndi))
+            letter = _get_subplot_letter(k)
+            table_data.append((letter, layer_name, model_b_name.upper(), model_a_name.upper(), ndi_b, ndi_a, delta_ndi))
+            k += 1
 
             ax = axs[i, j] if len(diff_pairs) > 1 and len(layers) > 1 else (axs[i] if len(diff_pairs) > 1 else axs[j])
 
@@ -693,7 +721,7 @@ def plot_fourier_angular_difference_grid(filter_data, layers, dc_radius=5, delta
             ylim_val = max(0.1, max_abs_diff * 1.2)
             ax.set_ylim(-ylim_val, +ylim_val)
 
-            ax.set_title(f"{pair_title}\nFeatures.{layer_name}.Conv\n[ΔNDI: {delta_ndi:+.3f}]", fontsize=10)
+            ax.set_title(f"({letter})", fontsize=11, fontweight='bold', pad=6)
             ax.grid(True, linestyle='--', alpha=0.5)
 
             if j == 0:
@@ -701,17 +729,19 @@ def plot_fourier_angular_difference_grid(filter_data, layers, dc_radius=5, delta
             if i == len(diff_pairs) - 1:
                 ax.set_xlabel("Angle θ (degrees)", fontsize=9)
 
+    # Print out subplot legend mapping table before plotting
+    print("\n" + "="*85)
+    print("📊 1D ANGULAR ENERGY DIFFERENCE PROFILES SUBPLOT LEGEND MAPPING:")
+    print("="*85)
+    print(f"{'SUBPLOT':<9} | {'SUBTRACTION PAIR (B - A)':<30} | {'LAYER':<18} | {'Δ NDI (B-A)':<12}")
+    print("-" * 85)
+    for let, l_name, m_b, m_a, n_b, n_a, d_ndi in table_data:
+        comp_str = f"{m_b} - {m_a}"
+        print(f"({let}){' ':<5} | {comp_str:<30} | FEATURES.{l_name.upper()}.CONV | {d_ndi:+10.4f}")
+    print("="*85 + "\n")
+
     plt.tight_layout()
     plt.show()
-
-    # Print summary text table
-    print("\n" + "="*76)
-    print(f"{'LAYER':<16} | {'SUBTRACTION PAIR (B - A)':<30} | {'NDI (B)':<9} | {'NDI (A)':<9} | {'Δ NDI (B-A)':<10}")
-    print("="*76)
-    for l_name, m_b, m_a, n_b, n_a, d_ndi in table_data:
-        comp_str = f"{m_b} - {m_a}"
-        print(f"FEATURES.{l_name}.CONV | {comp_str:<30} | {n_b:9.4f} | {n_a:9.4f} | {d_ndi:+10.4f}")
-        print("-" * 76)
 
     return table_data
 
@@ -816,11 +846,10 @@ def plot_synthetic_fourier_difference_demo(dc_radius=5, delta=21, use_log=False,
     o2_low, o2_high = 135 - delta, 135 + delta
 
     fig, axes = plt.subplots(1, 3, figsize=figsize, dpi=dpi)
-    fig.suptitle("Synthetic Demonstration: 90° vs 45° Spectral Energy Shift", fontsize=14, fontweight="bold")
 
     # Panel 1: Combined 2D Log Spectrum
     im0 = axes[0].imshow(log_90 + log_45, cmap="magma")
-    axes[0].set_title("Combined 2D Fourier Spectra", fontsize=11, fontweight="bold")
+    axes[0].set_title("(a)", fontsize=11, fontweight="bold", pad=6)
     axes[0].axis("off")
     plt.colorbar(im0, ax=axes[0], fraction=0.046, pad=0.04)
 
@@ -837,7 +866,7 @@ def plot_synthetic_fourier_difference_demo(dc_radius=5, delta=21, use_log=False,
     axes[1].set_ylim(0, 1.05)
     axes[1].set_xlabel("Angle θ (degrees)", fontsize=9)
     axes[1].set_ylabel("Norm. Energy", fontsize=9)
-    axes[1].set_title("Individual 1D Energy Distributions", fontsize=11, fontweight="bold")
+    axes[1].set_title("(b)", fontsize=11, fontweight="bold", pad=6)
     axes[1].legend(fontsize=8, loc="upper right")
     axes[1].grid(True, linestyle="--", alpha=0.5)
 
@@ -856,9 +885,18 @@ def plot_synthetic_fourier_difference_demo(dc_radius=5, delta=21, use_log=False,
     axes[2].set_ylim(-1.1, 1.1)
     axes[2].set_xlabel("Angle θ (degrees)", fontsize=9)
     axes[2].set_ylabel("Δ Norm. Energy", fontsize=9)
-    axes[2].set_title(f"Difference Profile (ΔNDI: {ndi_45 - ndi_90:+.3f})", fontsize=11, fontweight="bold")
+    axes[2].set_title("(c)", fontsize=11, fontweight="bold", pad=6)
     axes[2].legend(fontsize=8, loc="upper right")
     axes[2].grid(True, linestyle="--", alpha=0.5)
+
+    # Print out subplot legend mapping table before plotting
+    print("\n" + "="*70)
+    print("📊 SYNTHETIC FOURIER DIFFERENCE DEMO SUBPLOT LEGEND MAPPING:")
+    print("="*70)
+    print("  (a) Combined 2D Fourier Spectra (90° + 45° Gratings)")
+    print("  (b) Individual 1D Angular Energy Distributions")
+    print(f"  (c) Angular Energy Difference Profile (ΔNDI = {ndi_45 - ndi_90:+.4f})")
+    print("="*70 + "\n")
 
     plt.tight_layout()
     plt.show()
