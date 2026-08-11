@@ -316,8 +316,8 @@ def compute_fourier_spectrum(image_gray, dc_radius=5, delta=21, use_log=False):
     
     spectrum = log_magnitude if use_log else magnitude
     
-    cardinal_energy = np.sum(spectrum[mask_cardinal])
-    oblique_energy = np.sum(spectrum[mask_oblique])
+    cardinal_energy = np.mean(spectrum[mask_cardinal]) if np.count_nonzero(mask_cardinal) > 0 else 0.0
+    oblique_energy = np.mean(spectrum[mask_oblique]) if np.count_nonzero(mask_oblique) > 0 else 0.0
     
     total_energy = cardinal_energy + oblique_energy
     if total_energy == 0:
@@ -380,8 +380,11 @@ def plot_fourier_diagnostic(image_data, title="Fourier Diagnostic", dc_radius=5,
     angles = np.arange(0, 180, 2)
     angular_energy = []
     for a in angles:
-        bin_mask = (np.abs(theta - a) <= 2) & mask_dc
-        angular_energy.append(np.sum(spectrum[bin_mask]))
+        diff = np.abs(theta - a)
+        diff = np.minimum(diff, 180 - diff)
+        bin_mask = (diff <= 2) & mask_dc
+        cnt = np.count_nonzero(bin_mask)
+        angular_energy.append(np.mean(spectrum[bin_mask]) if cnt > 0 else 0.0)
     angular_energy = np.array(angular_energy)
     if np.max(angular_energy) > 0:
         angular_energy = angular_energy / np.max(angular_energy)
@@ -516,7 +519,8 @@ def compute_layer_angular_distribution(filter_images, dc_radius=5, delta=21, use
             diff = np.abs(theta - a)
             diff = np.minimum(diff, 180 - diff)
             bin_mask = (diff <= 2) & mask_dc
-            img_energy.append(np.sum(spectrum[bin_mask]))
+            cnt = np.count_nonzero(bin_mask)
+            img_energy.append(np.mean(spectrum[bin_mask]) if cnt > 0 else 0.0)
         total_angular_energy += np.array(img_energy)
 
     avg_angular_energy = total_angular_energy / len(filter_images)
