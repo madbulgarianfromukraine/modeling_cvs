@@ -244,17 +244,26 @@ def compare_all_domain_states(nat_patterns, ft_patterns, scr_patterns, layer_nam
 #  Fourier analysis & Normalized Difference Anisotropy Index (NDI)
 def _step1_preprocess(image_data):
     """
-    Step 1: Convert image to grayscale and crop to an 80x80 central square.
+    Step 1: Convert image to grayscale and crop to a central square.
+    Robustly handles 4D (N, C, H, W), 3D (C, H, W) or (H, W, C), and 2D (H, W) inputs.
     This guarantees equal grid dimensions for balanced 2D FFT frequency sampling.
     """
     if torch.is_tensor(image_data):
         image_data = image_data.detach().cpu().numpy()
         
+    while image_data.ndim > 3 and image_data.shape[0] == 1:
+        image_data = np.squeeze(image_data, axis=0)
+
+    if image_data.ndim == 4:
+        image_data = image_data[0]
+
     if image_data.ndim == 3:
         if image_data.shape[0] == 3:  # CHW format
             gray = 0.2989 * image_data[0] + 0.5870 * image_data[1] + 0.1140 * image_data[2]
-        else:                         # HWC format
+        elif image_data.shape[2] == 3:  # HWC format
             gray = 0.2989 * image_data[:, :, 0] + 0.5870 * image_data[:, :, 1] + 0.1140 * image_data[:, :, 2]
+        else:
+            gray = np.mean(image_data, axis=0)
     else:
         gray = image_data
 
@@ -504,7 +513,9 @@ def compute_layer_angular_distribution(filter_images, dc_radius=5, delta=21, use
 
         img_energy = []
         for a in angles:
-            bin_mask = (np.abs(theta - a) <= 2) & mask_dc
+            diff = np.abs(theta - a)
+            diff = np.minimum(diff, 180 - diff)
+            bin_mask = (diff <= 2) & mask_dc
             img_energy.append(np.sum(spectrum[bin_mask]))
         total_angular_energy += np.array(img_energy)
 
