@@ -255,7 +255,7 @@ def plot_fourier_diagnostic(image_data, title="Fourier Diagnostic", dc_radius=5,
     mask_oblique = (((theta >= o1_low) & (theta <= o1_high)) | ((theta >= o2_low) & (theta <= o2_high))) & mask_dc
     
     # Calculate 1D Angular Energy Profile
-    angles = np.arange(0, 180, 2)
+    angles = np.arange(0, 180, 1)
     angular_energy = []
     for a in angles:
         diff = np.abs(theta - a)
@@ -370,7 +370,7 @@ def compute_layer_angular_distribution(filter_images, dc_radius=5, delta=21, use
     Optionally accumulates log-magnitude spectrum when use_log=True or linear magnitude spectrum when use_log=False.
     Toggles 2D Hann spatial window preconditioning via use_hann=True (default True).
     """
-    angles = np.arange(0, 180, 2)
+    angles = np.arange(0, 180, 1)
     if len(filter_images) == 0:
         return angles, np.zeros_like(angles, dtype=np.float64), 0.0
 
