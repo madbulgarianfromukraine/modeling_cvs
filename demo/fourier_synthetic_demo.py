@@ -96,11 +96,13 @@ def run_synthetic_fourier_difference_demo(dc_radius=5, use_log=False, figsize=(1
     return fig
 
 
-def run_appeared_vs_disappeared_mask_demo(dc_radius=5, figsize=(16, 4.5), dpi=150, save_path=None):
+def run_appeared_vs_disappeared_mask_demo(dc_radius=5, delta=21, figsize=(16, 4.5), dpi=150, save_path=None):
     """
-    Demonstrates directional feature separation between Appeared (ReLU(B - A)) and Disappeared (ReLU(A - B)) features:
-    - Baseline Pattern A (Natural): 45° Diagonal Grating
-    - Target Pattern B (Screen)   : 90° Horizontal Grating
+    Demonstrates true Spectral Domain Feature Separation between Appeared (Spectral Gain) and Disappeared (Spectral Loss) features:
+    - Model A (Natural)  : 45° Diagonal Grating (Peak at 135°/45°)
+    - Model B (Screen)   : 90° Horizontal Grating (Peak at 90°)
+    - Spectral Gain (B-A): ReLU(E_B - E_A) -> Clean peak at 90°
+    - Spectral Loss (A-B): ReLU(E_A - E_B) -> Clean peak at 135°/45°
     """
     h, w = 120, 120
     y, x = np.indices((h, w))
@@ -111,45 +113,61 @@ def run_appeared_vs_disappeared_mask_demo(dc_radius=5, figsize=(16, 4.5), dpi=15
     # Pattern B (Screen): Horizontal 90° grating
     img_b = np.sin(2 * np.pi * 0.15 * y)
 
-    # 1. Appeared mask (ReLU(B - A))
-    mask_appeared = np.maximum(0, img_b - img_a)
+    # Compute 1D Fourier energy profiles directly for Model A and Model B
+    angles, energy_a, ndi_a = compute_layer_angular_distribution([img_a], dc_radius=dc_radius, delta=delta, use_log=False)
+    angles, energy_b, ndi_b = compute_layer_angular_distribution([img_b], dc_radius=dc_radius, delta=delta, use_log=False)
 
-    # 2. Disappeared mask (ReLU(A - B))
-    mask_disappeared = np.maximum(0, img_a - img_b)
+    # 1. Spectral Gain (Appeared Features in B relative to A)
+    spectral_gain = np.maximum(0, energy_b - energy_a)
 
-    # Compute 1D Fourier energy profiles
-    angles, energy_app, ndi_app = compute_layer_angular_distribution([mask_appeared], dc_radius=dc_radius)
-    angles, energy_dis, ndi_dis = compute_layer_angular_distribution([mask_disappeared], dc_radius=dc_radius)
+    # 2. Spectral Loss (Disappeared Features from A in B)
+    spectral_loss = np.maximum(0, energy_a - energy_b)
+
+    c_low, c_high = 90 - delta, 90 + delta
+    o1_low, o1_high = 45 - delta, 45 + delta
+    o2_low, o2_high = 135 - delta, 135 + delta
 
     fig, axes = plt.subplots(1, 3, figsize=figsize, dpi=dpi)
-    fig.suptitle("Directional Feature Separation: Appeared (B - A) vs Disappeared (A - B) Features", fontsize=14, fontweight="bold")
+    fig.suptitle("Spectral Domain Feature Separation: Appeared (Gain) vs Disappeared (Loss)", fontsize=14, fontweight="bold")
 
-    # Panel 1: Appeared Spatial Mask
-    im0 = axes[0].imshow(mask_appeared, cmap="hot")
-    axes[0].set_title(f"Appeared Features (B - A)\nReLU(I_B - I_A)", fontsize=11, fontweight="bold")
-    axes[0].axis("off")
-    plt.colorbar(im0, ax=axes[0], fraction=0.046, pad=0.04)
+    # Panel 1: Original Model A vs Model B Fourier Profiles
+    axes[0].plot(angles, energy_a, color="navy", lw=2, label=f"Model A (45° Diagonal, NDI: {ndi_a:+.3f})")
+    axes[0].plot(angles, energy_b, color="darkred", lw=2, label=f"Model B (90° Horizontal, NDI: {ndi_b:+.3f})")
+    axes[0].set_xticks([0, 45, 90, 135, 180])
+    axes[0].set_xlim(0, 180)
+    axes[0].set_ylim(0, 1.05)
+    axes[0].set_xlabel("Angle θ (degrees)", fontsize=9)
+    axes[0].set_ylabel("Norm. Energy", fontsize=9)
+    axes[0].set_title("Input Fourier Profiles (Model A vs B)", fontsize=11, fontweight="bold")
+    axes[0].legend(fontsize=8, loc="upper right")
+    axes[0].grid(True, linestyle="--", alpha=0.5)
 
-    # Panel 2: Disappeared Spatial Mask
-    im1 = axes[1].imshow(mask_disappeared, cmap="hot")
-    axes[1].set_title(f"Disappeared Features (A - B)\nReLU(I_A - I_B)", fontsize=11, fontweight="bold")
-    axes[1].axis("off")
-    plt.colorbar(im1, ax=axes[1], fraction=0.046, pad=0.04)
+    # Panel 2: Truly Appeared Features (Spectral Gain: ReLU(E_B - E_A))
+    axes[1].plot(angles, spectral_gain, color="darkred", lw=2.5, label="Spectral Gain: ReLU(E_B - E_A)")
+    axes[1].fill_between(angles, spectral_gain, 0, color="darkred", alpha=0.2)
+    axes[1].axvspan(0, delta, color="red", alpha=0.15)
+    axes[1].axvspan(c_low, c_high, color="red", alpha=0.15, label=f"Cardinal (±{delta}°)")
+    axes[1].axvspan(180 - delta, 180, color="red", alpha=0.15)
+    axes[1].set_xticks([0, 45, 90, 135, 180])
+    axes[1].set_xlim(0, 180)
+    axes[1].set_ylim(0, 1.05)
+    axes[1].set_xlabel("Angle θ (degrees)", fontsize=9)
+    axes[1].set_ylabel("Gain Norm. Energy", fontsize=9)
+    axes[1].set_title("✨ Appeared Features (Peak at 90° Cardinal)", fontsize=11, fontweight="bold")
+    axes[1].legend(fontsize=8, loc="upper right")
+    axes[1].grid(True, linestyle="--", alpha=0.5)
 
-    # Panel 3: 1D Fourier Energy Comparison
-    axes[2].plot(angles, energy_app, color="darkred", lw=2, label=f"Appeared (NDI: {ndi_app:+.3f})")
-    axes[2].plot(angles, energy_dis, color="navy", lw=2, linestyle="--", label=f"Disappeared (NDI: {ndi_dis:+.3f})")
-    axes[2].axvspan(0, 21, color="red", alpha=0.15)
-    axes[2].axvspan(69, 111, color="red", alpha=0.15, label="Cardinal (±21°)")
-    axes[2].axvspan(159, 180, color="red", alpha=0.15)
-    axes[2].axvspan(24, 66, color="blue", alpha=0.15, label="Oblique (±21°)")
-    axes[2].axvspan(114, 156, color="blue", alpha=0.15)
+    # Panel 3: Truly Disappeared Features (Spectral Loss: ReLU(E_A - E_B))
+    axes[2].plot(angles, spectral_loss, color="navy", lw=2.5, linestyle="--", label="Spectral Loss: ReLU(E_A - E_B)")
+    axes[2].fill_between(angles, spectral_loss, 0, color="navy", alpha=0.2)
+    axes[2].axvspan(o1_low, o1_high, color="blue", alpha=0.15, label=f"Oblique (±{delta}°)")
+    axes[2].axvspan(o2_low, o2_high, color="blue", alpha=0.15)
     axes[2].set_xticks([0, 45, 90, 135, 180])
     axes[2].set_xlim(0, 180)
     axes[2].set_ylim(0, 1.05)
     axes[2].set_xlabel("Angle θ (degrees)", fontsize=9)
-    axes[2].set_ylabel("Norm. Energy", fontsize=9)
-    axes[2].set_title("Fourier Angular Energy Distribution", fontsize=11, fontweight="bold")
+    axes[2].set_ylabel("Loss Norm. Energy", fontsize=9)
+    axes[2].set_title("🍂 Disappeared Features (Peak at 135° Oblique)", fontsize=11, fontweight="bold")
     axes[2].legend(fontsize=8, loc="upper right")
     axes[2].grid(True, linestyle="--", alpha=0.5)
 
