@@ -266,11 +266,12 @@ def _step1_preprocess(image_data):
     dx = (w - size) // 2
     return gray[dy:dy+size, dx:dx+size]
 
-def compute_fourier_spectrum(image_gray, dc_radius=5, delta=21, use_log=False):
+def compute_fourier_spectrum(image_gray, dc_radius=5, delta=21, use_log=False, use_hann=True):
     """
-    Step 2: Apply a circular spatial mask, compute 2D FFT, and calculate
+    Step 2: Apply a circular spatial mask (and optional 2D Hann spatial window), compute 2D FFT, and calculate
     Normalized Difference Index (NDI) across cardinal and oblique sectors.
     Optionally computes NDI using log-magnitude spectrum when use_log=True or linear magnitude spectrum when use_log=False.
+    Optionally applies 2D Hann windowing when use_hann=True (default True) to eliminate boundary spectral leakage.
     The angular sector window size is configurable via `delta` (default 21°).
     """
     h, w = image_gray.shape
@@ -280,9 +281,13 @@ def compute_fourier_spectrum(image_gray, dc_radius=5, delta=21, use_log=False):
     radius = min(h, w) / 2.0
     dist_from_center = np.sqrt((X - cx)**2 + (Y - cy)**2)
     
-    # 1. Circular spatial crop
+    # 1. Circular spatial crop & optional 2D Hann windowing
     circular_mask = dist_from_center <= radius
-    masked_image = image_gray * circular_mask
+    if use_hann:
+        window_2d = np.outer(np.hanning(h), np.hanning(w))
+        masked_image = image_gray * circular_mask * window_2d
+    else:
+        masked_image = image_gray * circular_mask
     
     # 2. 2D Fast Fourier Transform
     f_transform = np.fft.ifftshift(masked_image)
@@ -319,13 +324,14 @@ def compute_fourier_spectrum(image_gray, dc_radius=5, delta=21, use_log=False):
         
     return magnitude, log_magnitude, ndi
 
-def compute_rotational_anisotropy(image_data, dc_radius=5, delta=21, use_log=True):
+def compute_rotational_anisotropy(image_data, dc_radius=5, delta=21, use_log=True, use_hann=True):
     """
     Preprocesses image data (grayscale + square crop) and computes Fourier NDI metrics.
     Optionally returns log-magnitude spectrum when use_log=True or linear magnitude spectrum when use_log=False.
+    Toggles 2D Hann spatial window preconditioning via use_hann=True (default True).
     """
     image_gray = _step1_preprocess(image_data)
-    mag, log_mag, ndi = compute_fourier_spectrum(image_gray, dc_radius=dc_radius, delta=delta, use_log=use_log)
+    mag, log_mag, ndi = compute_fourier_spectrum(image_gray, dc_radius=dc_radius, delta=delta, use_log=use_log, use_hann=use_hann)
     spectrum = log_mag if use_log else mag
     return spectrum, ndi
 
@@ -339,7 +345,7 @@ def _get_subplot_letter(index):
         return f"{first}{second}"
 
 
-def plot_fourier_diagnostic(image_data, title="Fourier Diagnostic", dc_radius=5, delta=21, log_scale=False, use_log=False, figsize=(18, 4.5)):
+def plot_fourier_diagnostic(image_data, title="Fourier Diagnostic", dc_radius=5, delta=21, log_scale=False, use_log=False, use_hann=True, figsize=(18, 4.5)):
     """
     Generates a 4-panel visual diagnostic figure:
     (a) Spatial Image (Circular Masked)
@@ -349,7 +355,7 @@ def plot_fourier_diagnostic(image_data, title="Fourier Diagnostic", dc_radius=5,
     Prints a legend mapping table before displaying the plot.
     """
     image_gray = _step1_preprocess(image_data)
-    magnitude, log_mag, ndi = compute_fourier_spectrum(image_gray, dc_radius=dc_radius, delta=delta, use_log=use_log)
+    magnitude, log_mag, ndi = compute_fourier_spectrum(image_gray, dc_radius=dc_radius, delta=delta, use_log=use_log, use_hann=use_hann)
     spectrum = log_mag if use_log else magnitude
     
     h, w = image_gray.shape
@@ -455,19 +461,19 @@ def plot_fourier_diagnostic(image_data, title="Fourier Diagnostic", dc_radius=5,
     plt.show()
     return fig
 
-def analyze_layer_filters(filter_images, dc_radius=5, delta=21, use_log=True):
+def analyze_layer_filters(filter_images, dc_radius=5, delta=21, use_log=True, use_hann=True):
     """Averages spectral transformations and NDI anisotropy across all channels in a target layer."""
     if len(filter_images) == 0:
         return np.zeros((80, 80)), 0.0
 
-    sample_spec, _ = compute_rotational_anisotropy(filter_images[0], dc_radius=dc_radius, delta=delta, use_log=use_log)
+    sample_spec, _ = compute_rotational_anisotropy(filter_images[0], dc_radius=dc_radius, delta=delta, use_log=use_log, use_hann=use_hann)
     h, w = sample_spec.shape
     
     avg_spectrum = np.zeros((h, w), dtype=np.float64)
     anisotropy_scores = []
     
     for img in filter_images:
-        spec, ndi = compute_rotational_anisotropy(img, dc_radius=dc_radius, delta=delta, use_log=use_log)
+        spec, ndi = compute_rotational_anisotropy(img, dc_radius=dc_radius, delta=delta, use_log=use_log, use_hann=use_hann)
         avg_spectrum += spec
         anisotropy_scores.append(ndi)
         
@@ -477,11 +483,12 @@ def analyze_layer_filters(filter_images, dc_radius=5, delta=21, use_log=True):
     return avg_spectrum, avg_anisotropy
 
 
-def compute_layer_angular_distribution(filter_images, dc_radius=5, delta=21, use_log=False):
+def compute_layer_angular_distribution(filter_images, dc_radius=5, delta=21, use_log=False, use_hann=True):
     """
     Computes averaged 1D angular energy distribution profile and NDI anisotropy score
     across all filter images in a target layer.
     Optionally accumulates log-magnitude spectrum when use_log=True or linear magnitude spectrum when use_log=False.
+    Toggles 2D Hann spatial window preconditioning via use_hann=True (default True).
     """
     angles = np.arange(0, 180, 2)
     if len(filter_images) == 0:
@@ -501,7 +508,7 @@ def compute_layer_angular_distribution(filter_images, dc_radius=5, delta=21, use
 
     for img in filter_images:
         image_gray = _step1_preprocess(img)
-        magnitude, log_mag, ndi = compute_fourier_spectrum(image_gray, dc_radius=dc_radius, delta=delta, use_log=use_log)
+        magnitude, log_mag, ndi = compute_fourier_spectrum(image_gray, dc_radius=dc_radius, delta=delta, use_log=use_log, use_hann=use_hann)
         anisotropy_scores.append(ndi)
 
         spectrum = log_mag if use_log else magnitude
@@ -523,10 +530,11 @@ def compute_layer_angular_distribution(filter_images, dc_radius=5, delta=21, use
     return angles, avg_angular_energy, avg_anisotropy
 
 
-def plot_fourier_cmap_grid(filter_data, models, layers, dc_radius=5, delta=21, log_scale=False, use_log=True, figsize=(14, 11), dpi=150):
+def plot_fourier_cmap_grid(filter_data, models, layers, dc_radius=5, delta=21, log_scale=False, use_log=True, use_hann=True, figsize=(14, 11), dpi=150):
     """
     Plots a grid (len(models) x len(layers)) of averaged 2D Fourier Magnitude Spectra (CMAP).
     Optionally toggles log-magnitude transformation via use_log=True (default True).
+    Optionally applies 2D Hann windowing via use_hann=True (default True).
     Optionally applies log-scale color normalization via log_scale=True.
     Prints a summary text table of Anisotropy Index (NDI) for each model & layer.
     Subfigure panels are titled (a), (b), (c)... with a mapping legend printed to terminal stdout.
@@ -543,7 +551,7 @@ def plot_fourier_cmap_grid(filter_data, models, layers, dc_radius=5, delta=21, l
             images_list = filter_data[model_name][layer_name]
 
             # Process structural metrics
-            avg_spectrum, anisotropy_index = analyze_layer_filters(images_list, dc_radius=dc_radius, delta=delta, use_log=use_log)
+            avg_spectrum, anisotropy_index = analyze_layer_filters(images_list, dc_radius=dc_radius, delta=delta, use_log=use_log, use_hann=use_hann)
             anisotropy_results[model_name][layer_name] = anisotropy_index
 
             letter = _get_subplot_letter(k)
@@ -584,7 +592,7 @@ def plot_fourier_cmap_grid(filter_data, models, layers, dc_radius=5, delta=21, l
     return anisotropy_results
 
 
-def plot_fourier_angular_distribution_grid(filter_data, models, layers, dc_radius=5, delta=21, log_scale=False, use_log=False, plot_differences=True, figsize=(16, 11), dpi=150):
+def plot_fourier_angular_distribution_grid(filter_data, models, layers, dc_radius=5, delta=21, log_scale=False, use_log=False, use_hann=True, plot_differences=True, figsize=(16, 11), dpi=150):
     """
     Plots a grid (len(models) x len(layers)) of averaged 1D Angular Energy Distributions.
     Highlights Cardinal (0°/180°, 90°) and Oblique (45°, 135°) angular sectors.
@@ -604,7 +612,7 @@ def plot_fourier_angular_distribution_grid(filter_data, models, layers, dc_radiu
         for j, layer_name in enumerate(layers):
             images_list = filter_data[model_name][layer_name]
 
-            angles, avg_angular_energy, anisotropy_index = compute_layer_angular_distribution(images_list, dc_radius=dc_radius, delta=delta, use_log=use_log)
+            angles, avg_angular_energy, anisotropy_index = compute_layer_angular_distribution(images_list, dc_radius=dc_radius, delta=delta, use_log=use_log, use_hann=use_hann)
             anisotropy_results[model_name][layer_name] = anisotropy_index
 
             letter = _get_subplot_letter(k)
@@ -659,12 +667,12 @@ def plot_fourier_angular_distribution_grid(filter_data, models, layers, dc_radiu
     plt.show()
 
     if plot_differences and "natural" in filter_data:
-        plot_fourier_angular_difference_grid(filter_data, layers, dc_radius=dc_radius, delta=delta, use_log=use_log, dpi=dpi)
+        plot_fourier_angular_difference_grid(filter_data, layers, dc_radius=dc_radius, delta=delta, use_log=use_log, use_hann=use_hann, dpi=dpi)
 
     return anisotropy_results
 
 
-def plot_fourier_angular_difference_grid(filter_data, layers, dc_radius=5, delta=21, use_log=False, figsize=(16, 8), dpi=150):
+def plot_fourier_angular_difference_grid(filter_data, layers, dc_radius=5, delta=21, use_log=False, use_hann=True, figsize=(16, 8), dpi=150):
     """
     Plots a grid (2 x len(layers)) of 1D Angular Energy Difference Profiles:
     - Row 1: Fine-Tuned minus Natural (FT - NAT)
@@ -689,8 +697,8 @@ def plot_fourier_angular_difference_grid(filter_data, layers, dc_radius=5, delta
             images_a = filter_data[model_a_name][layer_name]
             images_b = filter_data[model_b_name][layer_name]
 
-            angles, energy_a, ndi_a = compute_layer_angular_distribution(images_a, dc_radius=dc_radius, delta=delta, use_log=use_log)
-            angles, energy_b, ndi_b = compute_layer_angular_distribution(images_b, dc_radius=dc_radius, delta=delta, use_log=use_log)
+            angles, energy_a, ndi_a = compute_layer_angular_distribution(images_a, dc_radius=dc_radius, delta=delta, use_log=use_log, use_hann=use_hann)
+            angles, energy_b, ndi_b = compute_layer_angular_distribution(images_b, dc_radius=dc_radius, delta=delta, use_log=use_log, use_hann=use_hann)
 
             diff_energy = energy_b - energy_a
             delta_ndi = ndi_b - ndi_a
@@ -767,6 +775,7 @@ def analyze_difference_masks_fourier(
     delta=21,
     log_scale=False,
     use_log=False,
+    use_hann=True,
     figsize=(16, 10),
     dpi=150
 ):
@@ -815,6 +824,7 @@ def analyze_difference_masks_fourier(
             delta=delta,
             log_scale=log_scale,
             use_log=use_log,
+            use_hann=use_hann,
             plot_differences=False,
             figsize=figsize,
             dpi=dpi
@@ -824,7 +834,7 @@ def analyze_difference_masks_fourier(
     return results if len(modes_to_run) > 1 else results[modes_to_run[0]]
 
 
-def plot_synthetic_fourier_difference_demo(dc_radius=5, delta=21, use_log=False, figsize=(16, 4.5), dpi=150):
+def plot_synthetic_fourier_difference_demo(dc_radius=5, delta=21, use_log=False, use_hann=True, figsize=(16, 4.5), dpi=150):
     """
     Generates a synthetic demonstration using two controlled 2D spatial gratings:
     - Image 1: 90° frequency energy (horizontal spatial grating)
@@ -842,11 +852,11 @@ def plot_synthetic_fourier_difference_demo(dc_radius=5, delta=21, use_log=False,
     # Image 2: 45° frequency energy (diagonal spatial grating x+y)
     img_45 = np.sin(2 * np.pi * 0.15 * (x + y) / np.sqrt(2))
 
-    mag_90, log_90, ndi_90 = compute_fourier_spectrum(img_90, dc_radius=dc_radius, delta=delta, use_log=use_log)
-    mag_45, log_45, ndi_45 = compute_fourier_spectrum(img_45, dc_radius=dc_radius, delta=delta, use_log=use_log)
+    mag_90, log_90, ndi_90 = compute_fourier_spectrum(img_90, dc_radius=dc_radius, delta=delta, use_log=use_log, use_hann=use_hann)
+    mag_45, log_45, ndi_45 = compute_fourier_spectrum(img_45, dc_radius=dc_radius, delta=delta, use_log=use_log, use_hann=use_hann)
 
-    angles, energy_90, _ = compute_layer_angular_distribution([img_90], dc_radius=dc_radius, delta=delta, use_log=use_log)
-    angles, energy_45, _ = compute_layer_angular_distribution([img_45], dc_radius=dc_radius, delta=delta, use_log=use_log)
+    angles, energy_90, _ = compute_layer_angular_distribution([img_90], dc_radius=dc_radius, delta=delta, use_log=use_log, use_hann=use_hann)
+    angles, energy_45, _ = compute_layer_angular_distribution([img_45], dc_radius=dc_radius, delta=delta, use_log=use_log, use_hann=use_hann)
     diff_energy = energy_45 - energy_90
 
     c_low, c_high = 90 - delta, 90 + delta
