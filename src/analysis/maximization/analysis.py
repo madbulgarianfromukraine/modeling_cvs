@@ -411,7 +411,7 @@ def compute_layer_angular_distribution(filter_images, dc_radius=5, delta=21, use
     return angles, avg_angular_energy, avg_anisotropy
 
 
-def plot_fourier_cmap_grid(filter_data, models, layers, dc_radius=5, delta=21, log_scale=False, use_log=True, use_hann=True, figsize=(14, 11), dpi=150):
+def plot_fourier_cmap_grid(filter_data, models, layers, dc_radius=5, delta=21, log_scale=False, use_log=True, use_hann=True, figsize=(14, 11), dpi=150, save_path=None):
     """
     Plots a grid (len(models) x len(layers)) of averaged 2D Fourier Magnitude Spectra (CMAP).
     Optionally toggles log-magnitude transformation via use_log=True (default True).
@@ -468,12 +468,14 @@ def plot_fourier_cmap_grid(filter_data, models, layers, dc_radius=5, delta=21, l
     print("="*76 + "\n")
 
     plt.tight_layout()
+    if save_path:
+        plt.savefig(save_path, format='png', bbox_inches='tight', dpi=dpi)
     plt.show()
 
     return anisotropy_results
 
 
-def plot_fourier_angular_distribution_grid(filter_data, models, layers, dc_radius=5, delta=21, log_scale=False, use_log=False, use_hann=True, plot_differences=True, figsize=(16, 11), dpi=150):
+def plot_fourier_angular_distribution_grid(filter_data, models, layers, dc_radius=5, delta=21, log_scale=False, use_log=False, use_hann=True, plot_differences=True, figsize=(16, 11), dpi=150, save_path=None, save_diff_path=None):
     """
     Plots a grid (len(models) x len(layers)) of averaged 1D Angular Energy Distributions.
     Highlights Cardinal (0°/180°, 90°) and Oblique (45°, 135°) angular sectors.
@@ -545,15 +547,18 @@ def plot_fourier_angular_distribution_grid(filter_data, models, layers, dc_radiu
     print("="*76 + "\n")
 
     plt.tight_layout()
+    if save_path:
+        plt.savefig(save_path, format='png', bbox_inches='tight', dpi=dpi)
     plt.show()
 
     if plot_differences and "natural" in filter_data:
-        plot_fourier_angular_difference_grid(filter_data, layers, dc_radius=dc_radius, delta=delta, use_log=use_log, use_hann=use_hann, dpi=dpi)
+        diff_save = save_diff_path if save_diff_path else ("fourier_angular_difference_grid.png" if save_path else None)
+        plot_fourier_angular_difference_grid(filter_data, layers, dc_radius=dc_radius, delta=delta, use_log=use_log, use_hann=use_hann, dpi=dpi, save_path=diff_save)
 
     return anisotropy_results
 
 
-def plot_fourier_angular_difference_grid(filter_data, layers, dc_radius=5, delta=21, use_log=False, use_hann=True, figsize=(16, 8), dpi=150):
+def plot_fourier_angular_difference_grid(filter_data, layers, dc_radius=5, delta=21, use_log=False, use_hann=True, figsize=(16, 8), dpi=150, save_path=None):
     """
     Plots a grid (2 x len(layers)) of 1D Angular Energy Difference Profiles:
     - Row 1: Fine-Tuned minus Natural (FT - NAT)
@@ -638,9 +643,12 @@ def plot_fourier_angular_difference_grid(filter_data, layers, dc_radius=5, delta
     print("="*85 + "\n")
 
     plt.tight_layout()
+    if save_path:
+        plt.savefig(save_path, format='png', bbox_inches='tight', dpi=dpi)
     plt.show()
 
     return table_data
+
 
 
 

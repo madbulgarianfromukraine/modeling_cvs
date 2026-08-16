@@ -7,7 +7,7 @@ import numpy as np
 import subprocess
 subprocess.run(["pip", "install", "torch_cka"], check=True)
 
-def plot_cka_matrix(cka_obj, title_suffix=""):
+def plot_cka_matrix(cka_obj, title_suffix="", save_path=None):
     cka_results = cka_obj.export()
     matrix = cka_results['CKA']
     model1_layers = cka_results['model1_layers']
@@ -41,19 +41,25 @@ def plot_cka_matrix(cka_obj, title_suffix=""):
 
     plt.colorbar(im, ax=ax, shrink=0.8)
     plt.tight_layout()
+    if save_path:
+        plt.savefig(save_path, format='png', bbox_inches='tight', dpi=300)
     plt.show()
 
-def plot_all_cka_pairs(cka_bf, cka_bs, cka_fs, cka_nb=None, cka_uc=None):
-    plot_cka_matrix(cka_bf, title_suffix="Baseline vs Fine-Tuned")
-    plot_cka_matrix(cka_bs, title_suffix="Baseline vs Scratch")
-    plot_cka_matrix(cka_fs, title_suffix="Fine-Tuned vs Scratch")
+def plot_all_cka_pairs(cka_bf, cka_bs, cka_fs, cka_nb=None, cka_uc=None, save_dir=None):
+    import os
+    def _get_path(filename):
+        return os.path.join(save_dir, filename) if save_dir else filename
+
+    plot_cka_matrix(cka_bf, title_suffix="Baseline vs Fine-Tuned", save_path=_get_path("cka_baseline_vs_finetuned.png"))
+    plot_cka_matrix(cka_bs, title_suffix="Baseline vs Scratch", save_path=_get_path("cka_baseline_vs_scratch.png"))
+    plot_cka_matrix(cka_fs, title_suffix="Fine-Tuned vs Scratch", save_path=_get_path("cka_finetuned_vs_scratch.png"))
     if cka_nb is not None:
-        plot_cka_matrix(cka_nb, title_suffix="Noise Baseline")
+        plot_cka_matrix(cka_nb, title_suffix="Noise Baseline", save_path=_get_path("cka_noise_baseline.png"))
     if cka_uc is not None:
-        plot_cka_matrix(cka_uc, title_suffix="Untrained Control of natural images")
+        plot_cka_matrix(cka_uc, title_suffix="Untrained Control of natural images", save_path=_get_path("cka_untrained_control.png"))
 
 
-def plot_layer_weight_diagnostic(models, model_names, layer_num, layer_name, threshold=0.001):
+def plot_layer_weight_diagnostic(models, model_names, layer_num, layer_name, threshold=0.001, save_path=None):
     colors = ['blue', 'orange', 'green']
     num_models = len(models)
     
@@ -74,4 +80,6 @@ def plot_layer_weight_diagnostic(models, model_names, layer_num, layer_name, thr
             
     plt.suptitle(f"Weight Sparsity Diagnostic - {layer_name.upper()}", fontsize=12, fontweight='bold', y=1.02)
     plt.tight_layout()
+    if save_path:
+        plt.savefig(save_path, format='png', bbox_inches='tight', dpi=300)
     plt.show()
