@@ -113,7 +113,7 @@ def project_with_umap(features, seed=317):
     return projector.fit_transform(reduced)
 
 
-def plot_umap(coords, labels, class_names, title):
+def plot_umap(coords, labels, class_names, title, save_path=None):
     frame = pd.DataFrame(coords, columns=['umap_1', 'umap_2'])
     frame['label'] = labels
     frame['class_name'] = frame['label'].map(lambda index: class_names[index])
@@ -136,6 +136,8 @@ def plot_umap(coords, labels, class_names, title):
     plt.ylabel('UMAP-2')
     plt.legend(bbox_to_anchor=(1.02, 1), loc='upper left', title='Class', fontsize=7)
     plt.tight_layout()
+    if save_path:
+        plt.savefig(save_path, format='png', bbox_inches='tight', dpi=300)
     plt.show()
 
 
