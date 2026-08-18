@@ -8,6 +8,28 @@ import numpy as np
 import subprocess
 subprocess.run(["pip", "install", "torch_cka"], check=True)
 
+def format_layer_name(layer_name):
+    mapping = {
+        "features.0.conv": "1st conv",
+        "features.1.conv": "2nd conv",
+        "features.3.conv": "3rd conv",
+        "features.4.conv": "4th conv",
+        "features.0": "1st conv",
+        "features.1": "2nd conv",
+        "features.3": "3rd conv",
+        "features.4": "4th conv",
+    }
+    if layer_name in mapping:
+        return mapping[layer_name]
+    import re
+    match = re.search(r'features\.(\d+)', str(layer_name))
+    if match:
+        idx = match.group(1)
+        idx_map = {'0': '1st conv', '1': '2nd conv', '3': '3rd conv', '4': '4th conv'}
+        if idx in idx_map:
+            return idx_map[idx]
+    return layer_name
+
 def plot_cka_matrix(cka_obj, title_suffix="", save_path=None):
     cka_results = cka_obj.export()
     matrix = cka_results['CKA']
@@ -19,13 +41,16 @@ def plot_cka_matrix(cka_obj, title_suffix="", save_path=None):
     if hasattr(matrix, 'cpu'):
         matrix = matrix.cpu().numpy()
 
+    display_m1_layers = [format_layer_name(l) for l in model1_layers]
+    display_m2_layers = [format_layer_name(l) for l in model2_layers]
+
     fig, ax = plt.subplots(figsize=(6, 5), dpi=150)
     im = ax.imshow(matrix, cmap='magma', origin='lower')
 
     ax.set_xticks(np.arange(len(model2_layers)))
     ax.set_yticks(np.arange(len(model1_layers)))
-    ax.set_xticklabels(model2_layers, fontsize=10)
-    ax.set_yticklabels(model1_layers, fontsize=10)
+    ax.set_xticklabels(display_m2_layers, fontsize=10)
+    ax.set_yticklabels(display_m1_layers, fontsize=10)
     
     ax.set_xlabel(m2_name, fontsize=11, labelpad=10)
     ax.set_ylabel(m1_name, fontsize=11, labelpad=10)
@@ -33,10 +58,14 @@ def plot_cka_matrix(cka_obj, title_suffix="", save_path=None):
     title = f"CKA Matrix ({title_suffix})" if title_suffix else "Representational Similarity Matrix (CKA)"
     ax.set_title(title, fontsize=12, pad=15, fontweight='bold')
 
+    min_val, max_val = matrix.min(), matrix.max()
+    val_range = max_val - min_val
+
     for i in range(len(model1_layers)):       
         for j in range(len(model2_layers)):   
             score = matrix[i, j]
-            text_color = "white" if score < 0.67 else "black"
+            norm_score = (score - min_val) / val_range if val_range > 1e-8 else 0.5
+            text_color = "white" if norm_score < 0.5 else "black"
             ax.text(j, i, f"{score:.4f}", ha="center", va="center", 
                     color=text_color, fontweight="bold", fontsize=12)
 
