@@ -57,19 +57,19 @@ def get_canny_edge(img, threshold1=30, threshold2=80):
 
 
 def plot_random_gradcam_edges(model, target_layers, samples_dict, class_names, file_name, num_samples=5, seed=317,
-                              enrico_resize=False, caltech_resize=False):
+                              enrico_resize=False, caltech_resize=False, save_images=False):
     """
     Executes GradCAM on a random subset of samples from samples_dict, 
-    overlaying the resulting heatmaps directly onto their Canny edge maps,
-    and saves each grid to disk.
+    overlaying the resulting heatmaps directly onto their Canny edge maps.
     
     Parameters:
     - model: The trained PyTorch model.
     - target_layers: Target convolutional layer(s).
     - samples_dict: Dictionary containing {class_idx: image_tensor}.
     - class_names: List or dictionary mapping class indices to string names.
-    - file_name: Base string path/name to save the files (e.g., 'results/gradcam_run').
+    - file_name: Base string path/name (e.g., 'results/gradcam_run').
     - num_samples: Number of random unique classes to visualize.
+    - save_images: Whether to save the rendered figures to disk (default False).
     """
     model.eval()
     
@@ -121,10 +121,9 @@ def plot_random_gradcam_edges(model, target_layers, samples_dict, class_names, f
             plt.tight_layout()
             
             # --- SAVE STEP ---
-            # Constructs a string like: "my_analysis_sample_1.png"
-            output_path = f"{file_name}_sample_{idx}.png"
-            # bbox_inches='tight' prevents labels from being clipped on saving
-            plt.savefig(output_path, bbox_inches='tight', dpi=300)
+            if save_images:
+                output_path = f"{file_name}_sample_{idx}.png"
+                plt.savefig(output_path, bbox_inches='tight', dpi=300)
             
             # Display plot in the notebook
             plt.show()

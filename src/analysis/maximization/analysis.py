@@ -412,7 +412,7 @@ def compute_layer_angular_distribution(filter_images, dc_radius=5, delta=21, use
     return angles, avg_angular_energy, avg_anisotropy
 
 
-def plot_fourier_cmap_grid(filter_data, models, layers, dc_radius=5, delta=21, log_scale=False, use_log=True, use_hann=True, figsize=(14, 11), dpi=150, save_path=None):
+def plot_fourier_cmap_grid(filter_data, models, layers, dc_radius=5, delta=21, log_scale=False, use_log=True, use_hann=True, figsize=(14, 11), dpi=150, save_path="fourier_cmap_grid.png"):
     """
     Plots a grid (len(models) x len(layers)) of averaged 2D Fourier Magnitude Spectra (CMAP).
     Optionally toggles log-magnitude transformation via use_log=True (default True).
@@ -476,7 +476,7 @@ def plot_fourier_cmap_grid(filter_data, models, layers, dc_radius=5, delta=21, l
     return anisotropy_results
 
 
-def plot_fourier_angular_distribution_grid(filter_data, models, layers, dc_radius=5, delta=21, log_scale=False, use_log=False, use_hann=True, plot_differences=True, figsize=(16, 11), dpi=150, save_path=None, save_diff_path=None):
+def plot_fourier_angular_distribution_grid(filter_data, models, layers, dc_radius=5, delta=21, log_scale=False, use_log=False, use_hann=True, plot_differences=True, figsize=(16, 11), dpi=150, save_path="fourier_angular_distribution_grid.png", save_diff_path="fourier_angular_difference_grid.png"):
     """
     Plots a grid (len(models) x len(layers)) of averaged 1D Angular Energy Distributions.
     Highlights Cardinal (0°/180°, 90°) and Oblique (45°, 135°) angular sectors.
@@ -559,7 +559,7 @@ def plot_fourier_angular_distribution_grid(filter_data, models, layers, dc_radiu
     return anisotropy_results
 
 
-def plot_fourier_angular_difference_grid(filter_data, layers, dc_radius=5, delta=21, use_log=False, use_hann=True, figsize=(16, 8), dpi=150, save_path=None):
+def plot_fourier_angular_difference_grid(filter_data, layers, dc_radius=5, delta=21, use_log=False, use_hann=True, figsize=(16, 8), dpi=150, save_path="fourier_angular_difference_grid.png"):
     """
     Plots a grid (2 x len(layers)) of 1D Angular Energy Difference Profiles:
     - Row 1: Fine-Tuned minus Natural (FT - NAT)
