@@ -97,7 +97,7 @@ class FilterVisualizer:
 
 
 
-def get_tensor_grid(batch_tensor, nrow=2, padding=2, brightness_offset=0.0, save_path=None):
+def get_tensor_grid(batch_tensor, nrow=6, padding=2, brightness_offset=0.0, save_path=None):
     """
     Processes a batch of tensors into a single grid image array.
     

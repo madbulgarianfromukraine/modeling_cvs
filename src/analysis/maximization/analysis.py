@@ -288,7 +288,7 @@ def _get_subplot_letter(index):
         return f"{first}{second}"
 
 
-def plot_fourier_diagnostic(image_data, title="Fourier Diagnostic", dc_radius=5, delta=21, log_scale=False, use_log=False, use_hann=True, figsize=(18, 4.5)):
+def plot_fourier_diagnostic(image_data, title="Fourier Diagnostic", dc_radius=5, delta=21, log_scale=False, use_log=False, use_hann=True, normalize=False, figsize=(18, 4.5)):
     """
     Generates a 4-panel visual diagnostic figure:
     (a) Spatial Image (Circular Masked)
@@ -327,7 +327,7 @@ def plot_fourier_diagnostic(image_data, title="Fourier Diagnostic", dc_radius=5,
         cnt = np.count_nonzero(bin_mask)
         angular_energy.append(np.mean(spectrum[bin_mask]) if cnt > 0 else 0.0)
     angular_energy = np.array(angular_energy)
-    if np.max(angular_energy) > 0:
+    if normalize and np.max(angular_energy) > 0:
         angular_energy = angular_energy / np.max(angular_energy)
         
     fig, axes = plt.subplots(1, 4, figsize=figsize)
@@ -380,10 +380,10 @@ def plot_fourier_diagnostic(image_data, title="Fourier Diagnostic", dc_radius=5,
         axes[3].set_yscale('log')
         pos_vals = angular_energy[angular_energy > 0]
         min_pos = np.min(pos_vals) if len(pos_vals) > 0 else 1e-4
-        axes[3].set_ylim(bottom=max(1e-4, min_pos * 0.5), top=1.2)
-        axes[3].set_ylabel("Norm. Energy (Log Scale)", fontsize=9)
+        axes[3].set_ylim(bottom=max(1e-4, min_pos * 0.5))
+        axes[3].set_ylabel("Norm. Energy (Log Scale)" if normalize else "Spectral Energy (Log Scale)", fontsize=9)
     else:
-        axes[3].set_ylabel("Norm. Energy", fontsize=9)
+        axes[3].set_ylabel("Norm. Energy" if normalize else "Spectral Energy", fontsize=9)
 
     axes[3].set_xlabel("Angle θ (degrees)", fontsize=9)
     axes[3].set_title("(d)", fontsize=11, fontweight='bold')
@@ -426,12 +426,13 @@ def analyze_layer_filters(filter_images, dc_radius=5, delta=21, use_log=True, us
     return avg_spectrum, avg_anisotropy
 
 
-def compute_layer_angular_distribution(filter_images, dc_radius=5, delta=21, use_log=False, use_hann=True):
+def compute_layer_angular_distribution(filter_images, dc_radius=5, delta=21, use_log=False, use_hann=True, normalize=False):
     """
     Computes averaged 1D angular energy distribution profile and NDI anisotropy score
     across all filter images in a target layer.
     Optionally accumulates log-magnitude spectrum when use_log=True or linear magnitude spectrum when use_log=False.
     Toggles 2D Hann spatial window preconditioning via use_hann=True (default True).
+    Optionally normalizes peak energy to 1.0 when normalize=True (default False to preserve raw energy values for absolute comparison).
     """
     angles = np.arange(0, 180, 1)
     if len(filter_images) == 0:
@@ -466,7 +467,7 @@ def compute_layer_angular_distribution(filter_images, dc_radius=5, delta=21, use
         total_angular_energy += np.array(img_energy)
 
     avg_angular_energy = total_angular_energy / len(filter_images)
-    if np.max(avg_angular_energy) > 0:
+    if normalize and np.max(avg_angular_energy) > 0:
         avg_angular_energy = avg_angular_energy / np.max(avg_angular_energy)
 
     avg_anisotropy = np.mean(anisotropy_scores)
@@ -537,7 +538,7 @@ def plot_fourier_cmap_grid(filter_data, models, layers, dc_radius=5, delta=21, l
     return anisotropy_results
 
 
-def plot_fourier_angular_distribution_grid(filter_data, models, layers, dc_radius=5, delta=21, log_scale=False, use_log=False, use_hann=True, plot_differences=True, figsize=(16, 11), dpi=150, save_path="fourier_angular_distribution_grid.png", save_diff_path="fourier_angular_difference_grid.png"):
+def plot_fourier_angular_distribution_grid(filter_data, models, layers, dc_radius=5, delta=21, log_scale=False, use_log=False, use_hann=True, normalize=False, plot_differences=True, figsize=(16, 11), dpi=150, save_path="fourier_angular_distribution_grid.png", save_diff_path="fourier_angular_difference_grid.png"):
     """
     Plots a grid (len(models) x len(layers)) of averaged 1D Angular Energy Distributions.
     Highlights Cardinal (0°/180°, 90°) and Oblique (45°, 135°) angular sectors.
@@ -557,7 +558,7 @@ def plot_fourier_angular_distribution_grid(filter_data, models, layers, dc_radiu
         for j, layer_name in enumerate(layers):
             images_list = filter_data[model_name][layer_name]
 
-            angles, avg_angular_energy, anisotropy_index = compute_layer_angular_distribution(images_list, dc_radius=dc_radius, delta=delta, use_log=use_log, use_hann=use_hann)
+            angles, avg_angular_energy, anisotropy_index = compute_layer_angular_distribution(images_list, dc_radius=dc_radius, delta=delta, use_log=use_log, use_hann=use_hann, normalize=normalize)
             anisotropy_results[model_name][layer_name] = anisotropy_index
 
             letter = _get_subplot_letter(k)
@@ -586,15 +587,14 @@ def plot_fourier_angular_distribution_grid(filter_data, models, layers, dc_radiu
                 ax.set_yscale('log')
                 pos_vals = avg_angular_energy[avg_angular_energy > 0]
                 min_pos = np.min(pos_vals) if len(pos_vals) > 0 else 1e-4
-                ax.set_ylim(bottom=max(1e-4, min_pos * 0.5), top=1.2)
-            else:
-                ax.set_ylim(0, 1.05)
+                ax.set_ylim(bottom=max(1e-4, min_pos * 0.5))
 
             ax.set_title(f"({letter})", fontsize=11, fontweight='bold', pad=6)
             ax.grid(True, linestyle='--', alpha=0.5)
 
             if j == 0:
-                ax.set_ylabel("Norm. Energy (Log Scale)" if log_scale else "Norm. Energy", fontsize=9)
+                ylabel = ("Norm. Energy" if normalize else "Spectral Energy") + (" (Log Scale)" if log_scale else "")
+                ax.set_ylabel(ylabel, fontsize=9)
             if i == len(models) - 1:
                 ax.set_xlabel("Angle θ (degrees)", fontsize=9)
 
@@ -615,12 +615,12 @@ def plot_fourier_angular_distribution_grid(filter_data, models, layers, dc_radiu
 
     if plot_differences and "natural" in filter_data:
         diff_save = save_diff_path if save_diff_path else ("fourier_angular_difference_grid.png" if save_path else None)
-        plot_fourier_angular_difference_grid(filter_data, layers, dc_radius=dc_radius, delta=delta, use_log=use_log, use_hann=use_hann, dpi=dpi, save_path=diff_save)
+        plot_fourier_angular_difference_grid(filter_data, layers, dc_radius=dc_radius, delta=delta, use_log=use_log, use_hann=use_hann, normalize=normalize, dpi=dpi, save_path=diff_save)
 
     return anisotropy_results
 
 
-def plot_fourier_angular_difference_grid(filter_data, layers, dc_radius=5, delta=21, use_log=False, use_hann=True, figsize=(16, 8), dpi=150, save_path="fourier_angular_difference_grid.png"):
+def plot_fourier_angular_difference_grid(filter_data, layers, dc_radius=5, delta=21, use_log=False, use_hann=True, normalize=False, figsize=(16, 8), dpi=150, save_path="fourier_angular_difference_grid.png"):
     """
     Plots a grid (2 x len(layers)) of 1D Angular Energy Difference Profiles:
     - Row 1: Fine-Tuned minus Natural (FT - NAT)
@@ -645,8 +645,8 @@ def plot_fourier_angular_difference_grid(filter_data, layers, dc_radius=5, delta
             images_a = filter_data[model_a_name][layer_name]
             images_b = filter_data[model_b_name][layer_name]
 
-            angles, energy_a, ndi_a = compute_layer_angular_distribution(images_a, dc_radius=dc_radius, delta=delta, use_log=use_log, use_hann=use_hann)
-            angles, energy_b, ndi_b = compute_layer_angular_distribution(images_b, dc_radius=dc_radius, delta=delta, use_log=use_log, use_hann=use_hann)
+            angles, energy_a, ndi_a = compute_layer_angular_distribution(images_a, dc_radius=dc_radius, delta=delta, use_log=use_log, use_hann=use_hann, normalize=normalize)
+            angles, energy_b, ndi_b = compute_layer_angular_distribution(images_b, dc_radius=dc_radius, delta=delta, use_log=use_log, use_hann=use_hann, normalize=normalize)
 
             diff_energy = energy_b - energy_a
             delta_ndi = ndi_b - ndi_a
@@ -680,16 +680,11 @@ def plot_fourier_angular_difference_grid(filter_data, layers, dc_radius=5, delta
             ax.set_xticks([0, 45, 90, 135, 180])
             ax.set_xlim(0, 180)
 
-            # Symmetrical y-axis limits around 0
-            max_abs_diff = np.max(np.abs(diff_energy)) if len(diff_energy) > 0 else 0.5
-            ylim_val = max(0.1, max_abs_diff * 1.2)
-            ax.set_ylim(-ylim_val, +ylim_val)
-
             ax.set_title(f"({letter})", fontsize=11, fontweight='bold', pad=6)
             ax.grid(True, linestyle='--', alpha=0.5)
 
             if j == 0:
-                ax.set_ylabel("Δ Norm. Energy", fontsize=9)
+                ax.set_ylabel("Δ Norm. Energy" if normalize else "Δ Energy", fontsize=9)
             if i == len(diff_pairs) - 1:
                 ax.set_xlabel("Angle θ (degrees)", fontsize=9)
 
@@ -722,6 +717,7 @@ def analyze_difference_masks_fourier(
     log_scale=False,
     use_log=False,
     use_hann=True,
+    normalize=False,
     figsize=(16, 10),
     dpi=150,
     save_path_prefix="fourier_diff_masks"
@@ -775,6 +771,7 @@ def analyze_difference_masks_fourier(
             log_scale=log_scale,
             use_log=use_log,
             use_hann=use_hann,
+            normalize=normalize,
             plot_differences=False,
             figsize=figsize,
             dpi=dpi,
@@ -790,7 +787,7 @@ def analyze_difference_masks_fourier(
 
 
 
-def plot_synthetic_fourier_difference_demo(dc_radius=5, delta=21, use_log=False, use_hann=True, figsize=(16, 4.5), dpi=150, save_path="fourier_synthetic_demo.png"):
+def plot_synthetic_fourier_difference_demo(dc_radius=5, delta=21, use_log=False, use_hann=True, normalize=False, figsize=(16, 4.5), dpi=150, save_path="fourier_synthetic_demo.png"):
     """
     Generates a synthetic demonstration using two controlled 2D spatial gratings:
     - Image 1: 90° frequency energy (horizontal spatial grating)
@@ -811,8 +808,8 @@ def plot_synthetic_fourier_difference_demo(dc_radius=5, delta=21, use_log=False,
     mag_90, log_90, ndi_90 = compute_fourier_spectrum(img_90, dc_radius=dc_radius, delta=delta, use_log=use_log, use_hann=use_hann)
     mag_45, log_45, ndi_45 = compute_fourier_spectrum(img_45, dc_radius=dc_radius, delta=delta, use_log=use_log, use_hann=use_hann)
 
-    angles, energy_90, _ = compute_layer_angular_distribution([img_90], dc_radius=dc_radius, delta=delta, use_log=use_log, use_hann=use_hann)
-    angles, energy_45, _ = compute_layer_angular_distribution([img_45], dc_radius=dc_radius, delta=delta, use_log=use_log, use_hann=use_hann)
+    angles, energy_90, _ = compute_layer_angular_distribution([img_90], dc_radius=dc_radius, delta=delta, use_log=use_log, use_hann=use_hann, normalize=normalize)
+    angles, energy_45, _ = compute_layer_angular_distribution([img_45], dc_radius=dc_radius, delta=delta, use_log=use_log, use_hann=use_hann, normalize=normalize)
     diff_energy = energy_45 - energy_90
 
     c_low, c_high = 90 - delta, 90 + delta
@@ -837,9 +834,8 @@ def plot_synthetic_fourier_difference_demo(dc_radius=5, delta=21, use_log=False,
     axes[1].axvspan(o2_low, o2_high, color="blue", alpha=0.15)
     axes[1].set_xticks([0, 45, 90, 135, 180])
     axes[1].set_xlim(0, 180)
-    axes[1].set_ylim(0, 1.05)
     axes[1].set_xlabel("Angle θ (degrees)", fontsize=9)
-    axes[1].set_ylabel("Norm. Energy", fontsize=9)
+    axes[1].set_ylabel("Norm. Energy" if normalize else "Spectral Energy", fontsize=9)
     axes[1].set_title("(b)", fontsize=11, fontweight="bold", pad=6)
     axes[1].legend(fontsize=8, loc="upper right")
     axes[1].grid(True, linestyle="--", alpha=0.5)
@@ -856,9 +852,8 @@ def plot_synthetic_fourier_difference_demo(dc_radius=5, delta=21, use_log=False,
     axes[2].axvspan(o2_low, o2_high, color="blue", alpha=0.15)
     axes[2].set_xticks([0, 45, 90, 135, 180])
     axes[2].set_xlim(0, 180)
-    axes[2].set_ylim(-1.1, 1.1)
     axes[2].set_xlabel("Angle θ (degrees)", fontsize=9)
-    axes[2].set_ylabel("Δ Norm. Energy", fontsize=9)
+    axes[2].set_ylabel("Δ Norm. Energy" if normalize else "Δ Energy", fontsize=9)
     axes[2].set_title("(c)", fontsize=11, fontweight="bold", pad=6)
     axes[2].legend(fontsize=8, loc="upper right")
     axes[2].grid(True, linestyle="--", alpha=0.5)
