@@ -130,15 +130,29 @@ def compute_difference_masks(patterns_a, patterns_b, mode="appeared"):
     - mode="disappeared" / "lost"  : ReLU(A - B) = max(0, A - B)
     - mode="absolute"              : |B - A|
     """
-    if isinstance(patterns_a, list) and isinstance(patterns_b, list):
+    if isinstance(patterns_a, list):
         patterns_a = {i: img for i, img in enumerate(patterns_a)}
+    if isinstance(patterns_b, list):
         patterns_b = {i: img for i, img in enumerate(patterns_b)}
 
-    common_indices = sorted(list(set(patterns_a.keys()).intersection(set(patterns_b.keys()))))
+    # Normalize integer-like string keys (e.g. "0" -> 0)
+    norm_a = {int(k) if str(k).isdigit() else k: v for k, v in patterns_a.items()}
+    norm_b = {int(k) if str(k).isdigit() else k: v for k, v in patterns_b.items()}
+
+    common_indices = sorted(list(set(norm_a.keys()).intersection(set(norm_b.keys()))))
+    # Fallback to positional index matching if keys do not directly intersect
+    if len(common_indices) == 0 and len(norm_a) > 0 and len(norm_b) > 0:
+        list_a = list(norm_a.values())
+        list_b = list(norm_b.values())
+        min_len = min(len(list_a), len(list_b))
+        norm_a = {i: list_a[i] for i in range(min_len)}
+        norm_b = {i: list_b[i] for i in range(min_len)}
+        common_indices = list(range(min_len))
+
     masks = {}
     for idx in common_indices:
-        tensor_a = patterns_a[idx]
-        tensor_b = patterns_b[idx]
+        tensor_a = norm_a[idx]
+        tensor_b = norm_b[idx]
         if torch.is_tensor(tensor_a):
             tensor_a = tensor_a.detach().cpu()
         else:
@@ -176,7 +190,7 @@ def compute_difference_masks(patterns_a, patterns_b, mode="appeared"):
         else:
             mask = torch.abs(img_b - img_a)
 
-        masks[idx] = mask
+        masks[idx] = mask.squeeze()
 
     return masks
 
@@ -188,19 +202,28 @@ def compute_difference_masks(patterns_a, patterns_b, mode="appeared"):
 #  Fourier analysis & Normalized Difference Anisotropy Index (NDI)
 def _step1_preprocess(image_data):
     """
-    Step 1: Convert image to grayscale and crop to an 80x80 central square.
+    Step 1: Convert image to 2D grayscale array and crop to a central square.
     This guarantees equal grid dimensions for balanced 2D FFT frequency sampling.
     """
     if torch.is_tensor(image_data):
         image_data = image_data.detach().cpu().numpy()
+
+    image_data = np.asarray(image_data, dtype=np.float64)
+    # Squeeze extra leading or trailing singleton batch/channel dimensions (e.g. (1, H, W) or (1, 1, H, W))
+    while image_data.ndim > 2 and (image_data.shape[0] == 1 or image_data.shape[-1] == 1):
+        image_data = np.squeeze(image_data)
         
     if image_data.ndim == 3:
-        if image_data.shape[0] == 3:  # CHW format
+        if image_data.shape[0] == 3:    # CHW format (3, H, W)
             gray = 0.2989 * image_data[0] + 0.5870 * image_data[1] + 0.1140 * image_data[2]
-        else:                         # HWC format
+        elif image_data.shape[2] == 3:  # HWC format (H, W, 3)
             gray = 0.2989 * image_data[:, :, 0] + 0.5870 * image_data[:, :, 1] + 0.1140 * image_data[:, :, 2]
-    else:
+        else:
+            gray = np.mean(image_data, axis=0)
+    elif image_data.ndim == 2:
         gray = image_data
+    else:
+        gray = np.squeeze(image_data)
 
     # Crop to central square of size min(h, w)
     h, w = gray.shape
@@ -747,11 +770,28 @@ def analyze_difference_masks_fourier(
         diff_filter_data = {}
         diff_models = []
 
-        for model_b, model_a, label in pairs:
+        available_models = list(filter_data.keys())
+        def _find_matching_model_key(target_name):
+            norm_target = target_name.lower().replace("-", "").replace("_", "")
+            for key in available_models:
+                if key.lower().replace("-", "").replace("_", "") == norm_target:
+                    return key
+            return target_name
+
+        for model_b_req, model_a_req, label in pairs:
+            model_b = _find_matching_model_key(model_b_req)
+            model_a = _find_matching_model_key(model_a_req)
+            if model_b not in filter_data or model_a not in filter_data:
+                print(f"⚠️ Warning: Model pair '{model_b_req}' vs '{model_a_req}' not found in filter_data keys ({available_models}). Skipping.")
+                continue
+
             pair_key = f"{model_b}_minus_{model_a}"
             diff_models.append(pair_key)
             diff_filter_data[pair_key] = {}
             for layer_name in layers:
+                if layer_name not in filter_data[model_a] or layer_name not in filter_data[model_b]:
+                    print(f"⚠️ Warning: Layer '{layer_name}' not found for pair ({model_b}, {model_a}). Skipping.")
+                    continue
                 p_a = filter_data[model_a][layer_name]
                 p_b = filter_data[model_b][layer_name]
                 diff_filter_data[pair_key][layer_name] = list(compute_difference_masks(p_a, p_b, mode=current_mode).values())
