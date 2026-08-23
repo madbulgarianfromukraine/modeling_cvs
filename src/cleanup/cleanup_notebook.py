@@ -60,14 +60,23 @@ def strip_outputs_and_metadata(notebook_dict):
         if "metadata" in cell:
             cell["metadata"] = {}
 
-    # Strip global notebook metadata down to the essentials (kernel & language)
-    if "metadata" in notebook_dict:
-        essential_keys = ["kernelspec", "language_info"]
-        notebook_dict["metadata"] = {
-            k: notebook_dict["metadata"][k] 
-            for k in essential_keys 
-            if k in notebook_dict["metadata"]
-        }
+    # Ensure essential global notebook metadata (kernelspec & language_info) for Kaggle compatibility
+    if "metadata" not in notebook_dict:
+        notebook_dict["metadata"] = {}
+
+    essential_metadata = {
+        "kernelspec": notebook_dict["metadata"].get("kernelspec", {
+            "display_name": "Python 3",
+            "language": "python",
+            "name": "python3"
+        }),
+        "language_info": notebook_dict["metadata"].get("language_info", {
+            "name": "python",
+            "version": "3.10.0"
+        })
+    }
+    notebook_dict["metadata"] = essential_metadata
+
 
     print(f"-> Cleaned outputs and metadata for {code_cells_cleaned} code cells.")
     return notebook_dict
