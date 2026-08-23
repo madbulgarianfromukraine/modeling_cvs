@@ -96,30 +96,36 @@ class FilterVisualizer:
 
 
 
-def get_tensor_grid(batch_tensor, nrow=5, padding=2, brightness_offset=0.0):
+def get_tensor_grid(batch_tensor, nrow=2, padding=2, brightness_offset=0.0, save_path=None):
     """
     Processes a batch of tensors into a single grid image array.
     
     Parameters:
         batch_tensor: A batch of image tensors.
-        nrow: Number of images displayed in each row of the grid.
+        nrow: Number of images displayed in each row of the grid (default 2 for 2x6 grid).
         padding: Amount of padding between images.
         brightness_offset: Float value to add to pixel intensities (e.g., 0.1 to 0.3).
+        save_path: Optional file path string to save the generated grid image PNG to disk.
         
     Returns:
         np.array: The grid image in (H, W, C) format, bounded between [0.0, 1.0].
     """
     # 1. Create the grid (C, H, W). normalize=True forces values to [0.0, 1.0]
     grid = vutils.make_grid(batch_tensor, nrow=nrow, padding=padding, normalize=True)
-    
+
     # 2. Convert to (H, W, C) and move to CPU/NumPy
     grid_np = grid.permute(1, 2, 0).cpu().numpy()
     
     # 3. Apply brightness offset and clip to valid image float bounds
     if brightness_offset != 0.0:
         grid_np = np.clip(grid_np + brightness_offset, 0.0, 1.0)
+
+    if save_path:
+        os.makedirs(os.path.dirname(save_path) if os.path.dirname(save_path) else '.', exist_ok=True)
+        plt.imsave(save_path, grid_np)
         
     return grid_np
+
 
 
 def visualization_process(vis_queue, vis_finish_event, model_kwargs, layers_to_viz, output_dir, 

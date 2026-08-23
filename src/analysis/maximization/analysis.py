@@ -121,6 +121,65 @@ def analyze_all_pairs_drift(nat_patterns, ft_patterns, scr_patterns, layer_name=
     
     return all_results
 
+
+def compute_difference_masks(patterns_a, patterns_b, mode="appeared"):
+    """
+    Computes spatial difference masks for matching pattern dictionary keys or list indices:
+    - mode="appeared" / "gained"   : ReLU(B - A) = max(0, B - A)
+    - mode="disappeared" / "lost"  : ReLU(A - B) = max(0, A - B)
+    - mode="absolute"              : |B - A|
+    """
+    if isinstance(patterns_a, list) and isinstance(patterns_b, list):
+        patterns_a = {i: img for i, img in enumerate(patterns_a)}
+        patterns_b = {i: img for i, img in enumerate(patterns_b)}
+
+    common_indices = sorted(list(set(patterns_a.keys()).intersection(set(patterns_b.keys()))))
+    masks = {}
+    for idx in common_indices:
+        tensor_a = patterns_a[idx]
+        tensor_b = patterns_b[idx]
+        if torch.is_tensor(tensor_a):
+            tensor_a = tensor_a.detach().cpu()
+        else:
+            tensor_a = torch.from_numpy(np.asarray(tensor_a))
+        if torch.is_tensor(tensor_b):
+            tensor_b = tensor_b.detach().cpu()
+        else:
+            tensor_b = torch.from_numpy(np.asarray(tensor_b))
+
+        if tensor_a.ndim == 3 and tensor_a.shape[0] != 3 and tensor_a.shape[2] == 3:
+            tensor_a = tensor_a.permute(2, 0, 1)
+        if tensor_b.ndim == 3 and tensor_b.shape[0] != 3 and tensor_b.shape[2] == 3:
+            tensor_b = tensor_b.permute(2, 0, 1)
+
+        if tensor_a.shape != tensor_b.shape:
+            tensor_b = F.interpolate(
+                tensor_b.unsqueeze(0),
+                size=(tensor_a.shape[-2], tensor_a.shape[-1]),
+                mode='bilinear',
+                align_corners=False
+            ).squeeze(0)
+
+        # Convert to grayscale 1xHxW if 3 channels
+        if tensor_a.ndim == 3 and tensor_a.shape[0] == 3:
+            img_a = 0.2989 * tensor_a[0:1] + 0.5870 * tensor_a[1:2] + 0.1140 * tensor_a[2:3]
+            img_b = 0.2989 * tensor_b[0:1] + 0.5870 * tensor_b[1:2] + 0.1140 * tensor_b[2:3]
+        else:
+            img_a = tensor_a
+            img_b = tensor_b
+
+        if mode in ["appeared", "gained", "new"]:
+            mask = torch.relu(img_b - img_a)
+        elif mode in ["disappeared", "lost", "gone"]:
+            mask = torch.relu(img_a - img_b)
+        else:
+            mask = torch.abs(img_b - img_a)
+
+        masks[idx] = mask
+
+    return masks
+
+
 # ==============================================================================
 # Fourier analysis & Normalized Difference Anisotropy Index (NDI)
 # ==============================================================================
@@ -652,11 +711,85 @@ def plot_fourier_angular_difference_grid(filter_data, layers, dc_radius=5, delta
     return table_data
 
 
+def analyze_difference_masks_fourier(
+    filter_data,
+    layers,
+    pairs=None,
+    mode="all",
+    dc_radius=5,
+    delta=21,
+    log_scale=False,
+    use_log=False,
+    use_hann=True,
+    figsize=(16, 10),
+    dpi=150,
+    save_path_prefix="fourier_diff_masks"
+):
+    """
+    Applies the full 2D and 1D Fourier spectral analysis sequence and NDI Anisotropy Index metrics
+    directly to spatial DIFFERENCE MASKS across model domain pairs.
+    Saves PNG figures if save_path_prefix is provided.
+    """
+    if pairs is None:
+        pairs = [
+            ("fine-tuned", "natural", "FINE-TUNED - NATURAL"),
+            ("screen", "natural", "SCREEN SCRATCH - NATURAL"),
+            ("fine-tuned", "screen", "FINE-TUNED - SCREEN SCRATCH")
+        ]
+
+    modes_to_run = ["appeared", "disappeared", "absolute"] if mode in ["all", "separate", "both"] else [mode]
+    results = {}
+
+    for current_mode in modes_to_run:
+        mode_title = {
+            "appeared": "✨ APPEARED / NEWLY LEARNED FEATURES (ReLU(I_B - I_A))",
+            "disappeared": "🍂 DISAPPEARED / ERASED FEATURES (ReLU(I_A - I_B))",
+            "absolute": "📊 ABSOLUTE TOTAL DIFFERENCE MASKS (|I_B - I_A|)"
+        }.get(current_mode, f"FOURIER ANALYSIS ({current_mode.upper()})")
+
+        diff_filter_data = {}
+        diff_models = []
+
+        for model_b, model_a, label in pairs:
+            pair_key = f"{model_b}_minus_{model_a}"
+            diff_models.append(pair_key)
+            diff_filter_data[pair_key] = {}
+            for layer_name in layers:
+                p_a = filter_data[model_a][layer_name]
+                p_b = filter_data[model_b][layer_name]
+                diff_filter_data[pair_key][layer_name] = list(compute_difference_masks(p_a, p_b, mode=current_mode).values())
+
+        print(f"\n=======================================================")
+        print(f"📊 {mode_title}")
+        print(f"=======================================================\n")
+
+        save_path = f"{save_path_prefix}_{current_mode}.png" if save_path_prefix else None
+
+        anisotropy_angular = plot_fourier_angular_distribution_grid(
+            filter_data=diff_filter_data,
+            models=diff_models,
+            layers=layers,
+            dc_radius=dc_radius,
+            delta=delta,
+            log_scale=log_scale,
+            use_log=use_log,
+            use_hann=use_hann,
+            plot_differences=False,
+            figsize=figsize,
+            dpi=dpi,
+            save_path=save_path
+        )
+        results[current_mode] = diff_filter_data
+
+    return results if len(modes_to_run) > 1 else results[modes_to_run[0]]
 
 
 
 
-def plot_synthetic_fourier_difference_demo(dc_radius=5, delta=21, use_log=False, use_hann=True, figsize=(16, 4.5), dpi=150):
+
+
+
+def plot_synthetic_fourier_difference_demo(dc_radius=5, delta=21, use_log=False, use_hann=True, figsize=(16, 4.5), dpi=150, save_path="fourier_synthetic_demo.png"):
     """
     Generates a synthetic demonstration using two controlled 2D spatial gratings:
     - Image 1: 90° frequency energy (horizontal spatial grating)
@@ -739,8 +872,11 @@ def plot_synthetic_fourier_difference_demo(dc_radius=5, delta=21, use_log=False,
     print("="*70 + "\n")
 
     plt.tight_layout()
+    if save_path:
+        plt.savefig(save_path, format='png', bbox_inches='tight', dpi=dpi)
     plt.show()
     return fig
+
 
 
 
