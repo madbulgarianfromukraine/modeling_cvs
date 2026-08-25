@@ -672,11 +672,32 @@ def plot_fourier_angular_distribution_grid(filter_data, models, layers, dc_radiu
         plt.savefig(save_path, format='png', bbox_inches='tight', dpi=dpi)
     plt.show()
 
-    if plot_differences and "natural" in filter_data:
+    has_baseline = any(_find_model_key(filter_data, alias) is not None for alias in ["natural", "nonsc", "baseline"])
+    if plot_differences and has_baseline:
         diff_save = save_diff_path if save_diff_path else ("fourier_angular_difference_grid.png" if save_path else None)
         plot_fourier_angular_difference_grid(filter_data, layers, dc_radius=dc_radius, delta=delta, use_log=use_log, use_hann=use_hann, normalize=normalize, dpi=dpi, save_path=diff_save)
 
     return anisotropy_results
+
+
+def _find_model_key(filter_data, target_name):
+    """Robustly matches model keys in filter_data dictionary regardless of exact string key format."""
+    if not isinstance(filter_data, dict):
+        return None
+    if target_name in filter_data:
+        return target_name
+    norm_target = target_name.lower().replace("-", "").replace("_", "").replace(" ", "")
+    for key in filter_data.keys():
+        norm_key = str(key).lower().replace("-", "").replace("_", "").replace(" ", "")
+        if norm_target == norm_key or norm_target in norm_key or norm_key in norm_target:
+            return key
+        if norm_target in ["natural", "nonsc", "nonscreen", "baseline"] and any(alias in norm_key for alias in ["natural", "nonsc", "nonscreen", "baseline"]):
+            return key
+        if norm_target in ["finetuned", "ft", "fine"] and any(alias in norm_key for alias in ["finetuned", "ft", "fine"]):
+            return key
+        if norm_target in ["screen", "sc", "scratch"] and any(alias in norm_key for alias in ["screen", "sc", "scratch"]):
+            return key
+    return None
 
 
 def _get_model_acronym(model_name):
@@ -714,7 +735,13 @@ def plot_fourier_angular_difference_grid(filter_data, layers, dc_radius=5, delta
     diff_matrix = {}
     table_data = []
     k = 0
-    for i, (model_b_name, model_a_name, pair_title) in enumerate(diff_pairs):
+    for i, (model_b_req, model_a_req, pair_title) in enumerate(diff_pairs):
+        model_b_name = _find_model_key(filter_data, model_b_req)
+        model_a_name = _find_model_key(filter_data, model_a_req)
+        if not model_b_name or not model_a_name:
+            print(f"⚠️ Warning: Model pair '{model_b_req}' ({model_b_name}) vs '{model_a_req}' ({model_a_name}) not found in filter_data keys ({list(filter_data.keys())}). Skipping.")
+            continue
+
         for j, layer_name in enumerate(layers):
             images_a = filter_data[model_a_name][layer_name]
             images_b = filter_data[model_b_name][layer_name]
@@ -727,17 +754,23 @@ def plot_fourier_angular_difference_grid(filter_data, layers, dc_radius=5, delta
 
             diff_matrix[(i, j)] = diff_energy
             letter = _get_subplot_letter(k)
-            table_data.append((letter, layer_name, model_b_name.upper(), model_a_name.upper(), ndi_b, ndi_a, delta_ndi))
+            table_data.append((letter, layer_name, str(model_b_name).upper(), str(model_a_name).upper(), ndi_b, ndi_a, delta_ndi))
             k += 1
+
+    if not diff_matrix:
+        print("⚠️ Warning: No valid model pairs were found to compute difference profiles.")
+        plt.close(fig)
+        return []
 
     # Pass 2: Calculate per-layer y_min and y_max across all difference pairs so each layer column shares unified y-limits
     layer_diff_ylim = {}
     for j in range(len(layers)):
-        column_diffs = [diff_matrix[(i, j)] for i in range(len(diff_pairs))]
+        column_diffs = [diff_matrix[(i, j)] for i in range(len(diff_pairs)) if (i, j) in diff_matrix]
         all_diffs = np.concatenate(column_diffs) if len(column_diffs) > 0 else np.array([0.0])
         max_abs_diff = float(np.max(np.abs(all_diffs))) if len(all_diffs) > 0 else 0.5
         margin = max_abs_diff * 0.08 if max_abs_diff > 0 else 0.1
         ylim_val = max_abs_diff + margin
+        layer_diff_ylim[j] = (-ylim_val, +ylim_val)
         layer_diff_ylim[j] = (-ylim_val, +ylim_val)
 
     # Pass 3: Plot difference profiles and apply unified per-layer y-limits
