@@ -679,6 +679,18 @@ def plot_fourier_angular_distribution_grid(filter_data, models, layers, dc_radiu
     return anisotropy_results
 
 
+def _get_model_acronym(model_name):
+    """Maps model name strings to clean, standard acronyms: FT, NONSC, SC."""
+    name_clean = str(model_name).lower().replace("-", "").replace("_", "").replace(" ", "")
+    if "finetuned" in name_clean or name_clean == "ft" or "fine" in name_clean:
+        return "FT"
+    elif "natural" in name_clean or "nonsc" in name_clean or "baseline" in name_clean or "nonscreen" in name_clean or "nat" in name_clean:
+        return "NONSC"
+    elif "screen" in name_clean or "scratch" in name_clean or name_clean == "sc" or "scr" in name_clean:
+        return "SC"
+    return str(model_name).upper()[:5]
+
+
 def plot_fourier_angular_difference_grid(filter_data, layers, dc_radius=5, delta=21, use_log=False, use_hann=True, normalize=False, figsize=(16, 8), dpi=150, save_path="fourier_angular_difference_grid.png"):
     """
     Plots a grid (2 x len(layers)) of 1D Angular Energy Difference Profiles:
@@ -739,7 +751,9 @@ def plot_fourier_angular_difference_grid(filter_data, layers, dc_radius=5, delta
             ax = axs[i, j] if len(diff_pairs) > 1 and len(layers) > 1 else (axs[i] if len(diff_pairs) > 1 else axs[j])
 
             color = 'purple' if i == 0 else 'crimson'
-            ax.plot(angles, diff_energy, color=color, lw=2, label=f"Δ Energy ({model_b_name[:2].upper()} - {model_a_name[:3].upper()})")
+            acronym_b = _get_model_acronym(model_b_name)
+            acronym_a = _get_model_acronym(model_a_name)
+            ax.plot(angles, diff_energy, color=color, lw=2, label=f"Δ Energy ({acronym_b} - {acronym_a})")
 
             # Reference baseline at y = 0
             ax.axhline(0, color='black', linestyle='--', alpha=0.6, lw=1)
