@@ -6,8 +6,12 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
-import subprocess
-subprocess.run(["pip", "install", "torch_cka"], check=True)
+try:
+    import torch_cka
+except ImportError:
+    import sys
+    import subprocess
+    subprocess.run([sys.executable, "-m", "pip", "install", "torch_cka"], check=False)
 
 def format_layer_name(layer_name):
     mapping = {
@@ -90,6 +94,49 @@ def plot_all_cka_pairs(cka_bf, cka_bs, cka_fs, cka_nb=None, cka_uc=None, save_di
         plot_cka_matrix(cka_uc, title_suffix="Untrained Control of natural images", save_path=_get_path("cka_untrained_control.png"))
 
 
+def _extract_conv_weights(model, layer_num, layer_name=None):
+    import torch
+    import torch.nn as nn
+
+    # 1. Try direct indexing into model.features[layer_num]
+    if hasattr(model, "features") and isinstance(layer_num, int):
+        if 0 <= layer_num < len(model.features):
+            target = model.features[layer_num]
+            if hasattr(target, "conv") and hasattr(target.conv, "weight") and target.conv.weight is not None:
+                return target.conv.weight.detach().cpu().numpy().flatten()
+            elif hasattr(target, "weight") and target.weight is not None:
+                return target.weight.detach().cpu().numpy().flatten()
+
+    # 2. Collect all convolutional modules in model.features or model
+    conv_modules = []
+    if hasattr(model, "features"):
+        for m in model.features:
+            if hasattr(m, "conv") and hasattr(m.conv, "weight") and m.conv.weight is not None:
+                conv_modules.append(m.conv)
+            elif hasattr(m, "weight") and m.weight is not None:
+                conv_modules.append(m)
+    else:
+        for m in model.modules():
+            if isinstance(m, nn.Conv2d) and m.weight is not None:
+                conv_modules.append(m)
+
+    # 3. Handle ordinal indexing (0=1st conv, 1=2nd conv, 2=3rd conv, 3=4th conv)
+    if isinstance(layer_num, int) and 0 <= layer_num < len(conv_modules):
+        return conv_modules[layer_num].weight.detach().cpu().numpy().flatten()
+
+    # 4. Handle string matching if layer_name provided
+    if layer_name:
+        clean = str(layer_name).lower().replace(" ", "").replace("_", "")
+        for idx, m in enumerate(conv_modules):
+            if f"{idx+1}" in clean or f"conv{idx+1}" in clean:
+                return m.weight.detach().cpu().numpy().flatten()
+
+    if conv_modules:
+        return conv_modules[-1].weight.detach().cpu().numpy().flatten()
+
+    raise ValueError(f"Could not extract weights for layer_num={layer_num}, layer_name={layer_name}")
+
+
 def plot_layer_weight_diagnostic(models, model_names, layer_num, layer_name, threshold=0.001, save_path=None):
     colors = ['blue', 'orange', 'green']
     num_models = len(models)
@@ -99,18 +146,26 @@ def plot_layer_weight_diagnostic(models, model_names, layer_num, layer_name, thr
     if num_models == 1:
         axs = [axs]
         
+    sparsity_info = []
     for i, (model, name) in enumerate(zip(models, model_names)):
-        weights = model.features[layer_num].conv.weight.detach().cpu().numpy().flatten()
+        weights = _extract_conv_weights(model, layer_num, layer_name)
         sparsity = np.mean(np.abs(weights) < threshold) * 100
+        sparsity_info.append((name, sparsity))
         
         axs[i].hist(weights, bins=100, color=colors[i % len(colors)], alpha=0.7)
-        axs[i].set_title(f"{name}\nSparsity (<{threshold}): {sparsity:.2f}%", fontsize=10)
         axs[i].set_xlabel("Weight Value")
         if i == 0:
             axs[i].set_ylabel("Count")
-            
-    plt.suptitle(f"Weight Sparsity Diagnostic - {layer_name.upper()}", fontsize=12, fontweight='bold', y=1.02)
+
     plt.tight_layout()
     if save_path:
         plt.savefig(save_path, format='png', bbox_inches='tight', dpi=300)
     plt.show()
+
+    # Print summary after displaying plot (no titles on the figure itself)
+    print("\n" + "=" * 76)
+    print(f"📊 WEIGHT SPARSITY DIAGNOSTIC - {layer_name.upper()}")
+    print("=" * 76)
+    for name, sparsity in sparsity_info:
+        print(f"  • {name:<20} | Sparsity (< {threshold}): {sparsity:.2f}%")
+    print("=" * 76 + "\n")

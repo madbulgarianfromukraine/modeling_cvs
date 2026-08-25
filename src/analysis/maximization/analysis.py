@@ -567,6 +567,7 @@ def plot_fourier_angular_distribution_grid(filter_data, models, layers, dc_radiu
     """
     Plots a grid (len(models) x len(layers)) of averaged 1D Angular Energy Distributions.
     Highlights Cardinal (0°/180°, 90°) and Oblique (45°, 135°) angular sectors.
+    Enforces shared y_min and y_max per layer column across all models for unnormalized direct comparisons.
     Subfigure panels are titled (a), (b), (c)... with a mapping legend printed to terminal stdout.
     """
     anisotropy_results = {m: {} for m in models}
@@ -577,14 +578,46 @@ def plot_fourier_angular_distribution_grid(filter_data, models, layers, dc_radiu
     o1_low, o1_high = 45 - delta, 45 + delta
     o2_low, o2_high = 135 - delta, 135 + delta
 
+    # Pass 1: Compute 1D angular energy distributions for all model & layer combinations
+    energy_matrix = {}
+    anisotropy_matrix = {}
+    for i, model_name in enumerate(models):
+        for j, layer_name in enumerate(layers):
+            images_list = filter_data[model_name][layer_name]
+            angles, avg_angular_energy, anisotropy_index = compute_layer_angular_distribution(
+                images_list, dc_radius=dc_radius, delta=delta, use_log=use_log, use_hann=use_hann, normalize=normalize
+            )
+            energy_matrix[(i, j)] = avg_angular_energy
+            anisotropy_matrix[(i, j)] = anisotropy_index
+            anisotropy_results[model_name][layer_name] = anisotropy_index
+
+    # Pass 2: Calculate per-layer y_min and y_max across all models so each layer column shares unified y-limits
+    layer_ylim = {}
+    for j in range(len(layers)):
+        layer_energies = [energy_matrix[(i, j)] for i in range(len(models))]
+        all_vals = np.concatenate(layer_energies) if len(layer_energies) > 0 else np.array([0.0])
+
+        if log_scale:
+            pos_vals = all_vals[all_vals > 0]
+            min_pos = np.min(pos_vals) if len(pos_vals) > 0 else 1e-4
+            max_pos = np.max(all_vals) if len(all_vals) > 0 else 1.0
+            layer_ylim[j] = (max(1e-4, min_pos * 0.5), max(1e-4, max_pos * 1.15))
+        else:
+            min_val = float(np.min(all_vals))
+            max_val = float(np.max(all_vals))
+            val_range = max_val - min_val
+            margin = val_range * 0.06 if val_range > 0 else (abs(max_val) * 0.06 if max_val != 0 else 0.1)
+            bottom = 0.0 if (min_val >= 0 and not log_scale) else (min_val - margin)
+            top = max_val + margin
+            layer_ylim[j] = (bottom, top)
+
+    # Pass 3: Plot energy profiles and apply unified per-layer y-limits
     k = 0
     legend_entries = []
     for i, model_name in enumerate(models):
         for j, layer_name in enumerate(layers):
-            images_list = filter_data[model_name][layer_name]
-
-            angles, avg_angular_energy, anisotropy_index = compute_layer_angular_distribution(images_list, dc_radius=dc_radius, delta=delta, use_log=use_log, use_hann=use_hann, normalize=normalize)
-            anisotropy_results[model_name][layer_name] = anisotropy_index
+            avg_angular_energy = energy_matrix[(i, j)]
+            anisotropy_index = anisotropy_matrix[(i, j)]
 
             letter = _get_subplot_letter(k)
             legend_entries.append((letter, model_name.upper(), f"FEATURES.{layer_name.upper()}.CONV", anisotropy_index))
@@ -610,9 +643,9 @@ def plot_fourier_angular_distribution_grid(filter_data, models, layers, dc_radiu
 
             if log_scale:
                 ax.set_yscale('log')
-                pos_vals = avg_angular_energy[avg_angular_energy > 0]
-                min_pos = np.min(pos_vals) if len(pos_vals) > 0 else 1e-4
-                ax.set_ylim(bottom=max(1e-4, min_pos * 0.5))
+
+            # Enforce unified per-layer y-limits across models
+            ax.set_ylim(layer_ylim[j])
 
             ax.set_title(f"({letter})", fontsize=11, fontweight='bold', pad=6)
             ax.grid(True, linestyle='--', alpha=0.5)
@@ -650,6 +683,7 @@ def plot_fourier_angular_difference_grid(filter_data, layers, dc_radius=5, delta
     Plots a grid (2 x len(layers)) of 1D Angular Energy Difference Profiles:
     - Row 1: Fine-Tuned minus Natural (FT - NAT)
     - Row 2: Screen (Scratch) minus Natural (SCR - NAT)
+    Enforces shared symmetrical y_min and y_max per layer column across all difference pairs.
     Subfigure panels are titled (a), (b), (c)... with a mapping legend printed to terminal stdout.
     """
     diff_pairs = [
@@ -659,11 +693,13 @@ def plot_fourier_angular_difference_grid(filter_data, layers, dc_radius=5, delta
 
     fig, axs = plt.subplots(len(diff_pairs), len(layers), figsize=figsize, dpi=dpi)
 
-    table_data = []
     c_low, c_high = 90 - delta, 90 + delta
     o1_low, o1_high = 45 - delta, 45 + delta
     o2_low, o2_high = 135 - delta, 135 + delta
 
+    # Pass 1: Compute difference profiles for all pairs and layers
+    diff_matrix = {}
+    table_data = []
     k = 0
     for i, (model_b_name, model_a_name, pair_title) in enumerate(diff_pairs):
         for j, layer_name in enumerate(layers):
@@ -676,8 +712,27 @@ def plot_fourier_angular_difference_grid(filter_data, layers, dc_radius=5, delta
             diff_energy = energy_b - energy_a
             delta_ndi = ndi_b - ndi_a
 
+            diff_matrix[(i, j)] = diff_energy
             letter = _get_subplot_letter(k)
             table_data.append((letter, layer_name, model_b_name.upper(), model_a_name.upper(), ndi_b, ndi_a, delta_ndi))
+            k += 1
+
+    # Pass 2: Calculate per-layer y_min and y_max across all difference pairs so each layer column shares unified y-limits
+    layer_diff_ylim = {}
+    for j in range(len(layers)):
+        column_diffs = [diff_matrix[(i, j)] for i in range(len(diff_pairs))]
+        all_diffs = np.concatenate(column_diffs) if len(column_diffs) > 0 else np.array([0.0])
+        max_abs_diff = float(np.max(np.abs(all_diffs))) if len(all_diffs) > 0 else 0.5
+        margin = max_abs_diff * 0.08 if max_abs_diff > 0 else 0.1
+        ylim_val = max_abs_diff + margin
+        layer_diff_ylim[j] = (-ylim_val, +ylim_val)
+
+    # Pass 3: Plot difference profiles and apply unified per-layer y-limits
+    k = 0
+    for i, (model_b_name, model_a_name, pair_title) in enumerate(diff_pairs):
+        for j, layer_name in enumerate(layers):
+            diff_energy = diff_matrix[(i, j)]
+            letter = table_data[k][0]
             k += 1
 
             ax = axs[i, j] if len(diff_pairs) > 1 and len(layers) > 1 else (axs[i] if len(diff_pairs) > 1 else axs[j])
@@ -704,6 +759,9 @@ def plot_fourier_angular_difference_grid(filter_data, layers, dc_radius=5, delta
 
             ax.set_xticks([0, 45, 90, 135, 180])
             ax.set_xlim(0, 180)
+
+            # Enforce unified per-layer y-limits across difference pairs
+            ax.set_ylim(layer_diff_ylim[j])
 
             ax.set_title(f"({letter})", fontsize=11, fontweight='bold', pad=6)
             ax.grid(True, linestyle='--', alpha=0.5)
