@@ -712,18 +712,22 @@ def _get_model_acronym(model_name):
     return str(model_name).upper()[:5]
 
 
-def plot_fourier_angular_difference_grid(filter_data, layers, dc_radius=5, delta=21, use_log=False, use_hann=True, normalize=False, figsize=(16, 8), dpi=150, save_path="fourier_angular_difference_grid.png"):
+def plot_fourier_angular_difference_grid(filter_data, layers, pairs=None, dc_radius=5, delta=21, use_log=False, use_hann=True, normalize=False, figsize=(16, 11), dpi=150, save_path="fourier_angular_difference_grid.png"):
     """
-    Plots a grid (2 x len(layers)) of 1D Angular Energy Difference Profiles:
-    - Row 1: Fine-Tuned minus Natural (FT - NAT)
-    - Row 2: Screen (Scratch) minus Natural (SCR - NAT)
+    Plots a grid (len(pairs) x len(layers)) of 1D Angular Energy Difference Profiles:
+    - Pair 1: Fine-Tuned minus Natural (FT - NONSC)
+    - Pair 2: Screen (Scratch) minus Natural (SC - NONSC)
+    - Pair 3: Fine-Tuned minus Screen (Scratch) (FT - SC)
     Enforces shared symmetrical y_min and y_max per layer column across all difference pairs.
     Subfigure panels are titled (a), (b), (c)... with a mapping legend printed to terminal stdout.
     """
-    diff_pairs = [
-        ("fine-tuned", "natural", "FINE-TUNED - NATURAL"),
-        ("screen", "natural", "SCREEN SCRATCH - NATURAL")
-    ]
+    if pairs is None:
+        pairs = [
+            ("fine-tuned", "natural", "FINE-TUNED - NATURAL"),
+            ("screen", "natural", "SCREEN SCRATCH - NATURAL"),
+            ("fine-tuned", "screen", "FINE-TUNED - SCREEN SCRATCH")
+        ]
+    diff_pairs = pairs
 
     fig, axs = plt.subplots(len(diff_pairs), len(layers), figsize=figsize, dpi=dpi)
 
@@ -771,19 +775,23 @@ def plot_fourier_angular_difference_grid(filter_data, layers, dc_radius=5, delta
         margin = max_abs_diff * 0.08 if max_abs_diff > 0 else 0.1
         ylim_val = max_abs_diff + margin
         layer_diff_ylim[j] = (-ylim_val, +ylim_val)
-        layer_diff_ylim[j] = (-ylim_val, +ylim_val)
 
     # Pass 3: Plot difference profiles and apply unified per-layer y-limits
+    colors = ['purple', 'crimson', 'teal']
     k = 0
-    for i, (model_b_name, model_a_name, pair_title) in enumerate(diff_pairs):
+    for i, (model_b_req, model_a_req, pair_title) in enumerate(diff_pairs):
+        model_b_name = _find_model_key(filter_data, model_b_req)
+        model_a_name = _find_model_key(filter_data, model_a_req)
         for j, layer_name in enumerate(layers):
+            if (i, j) not in diff_matrix:
+                continue
             diff_energy = diff_matrix[(i, j)]
             letter = table_data[k][0]
             k += 1
 
             ax = axs[i, j] if len(diff_pairs) > 1 and len(layers) > 1 else (axs[i] if len(diff_pairs) > 1 else axs[j])
 
-            color = 'purple' if i == 0 else 'crimson'
+            color = colors[i % len(colors)]
             acronym_b = _get_model_acronym(model_b_name)
             acronym_a = _get_model_acronym(model_a_name)
             ax.plot(angles, diff_energy, color=color, lw=2, label=f"Δ Energy ({acronym_b} - {acronym_a})")
@@ -813,7 +821,7 @@ def plot_fourier_angular_difference_grid(filter_data, layers, dc_radius=5, delta
             ax.grid(True, linestyle='--', alpha=0.5)
 
             if j == 0:
-                ax.set_ylabel("Δ Norm. Energy" if normalize else "Δ Energy", fontsize=9)
+                ax.set_ylabel(f"Δ Energy ({acronym_b} - {acronym_a})", fontsize=9, fontweight='bold')
             if i == len(diff_pairs) - 1:
                 ax.set_xlabel("Angle θ (degrees)", fontsize=9)
 
@@ -926,6 +934,150 @@ def analyze_difference_masks_fourier(
         results[current_mode] = diff_filter_data
 
     return results if len(modes_to_run) > 1 else results[modes_to_run[0]]
+
+
+def plot_spatial_difference_masks_grid(
+    filter_data,
+    layers,
+    pairs=None,
+    mode="both",
+    nrow=None,
+    figsize=(16, 11),
+    dpi=150,
+    cmap="hot",
+    save_path="spatial_difference_masks_grid.png"
+):
+    """
+    Plots grids (len(pairs) x len(layers)) of Spatial Difference Masks (SDMs) between filter activation maximizations:
+    - Pair 1: Fine-Tuned minus Natural (FT - NONSC)
+    - Pair 2: Screen (Scratch) minus Natural (SC - NONSC)
+    - Pair 3: Fine-Tuned minus Screen (Scratch) (FT - SC)
+
+    Modes:
+    - "both"        : Runs both "appeared" and "disappeared" modes (Default)
+    - "appeared"    : ReLU(B - A) = newly learned/gained features
+    - "disappeared" : ReLU(A - B) = erased/lost features
+    - "absolute"    : |B - A|     = total magnitude change
+    - "all"         : Runs "appeared", "disappeared", and "absolute" modes
+    """
+    if pairs is None:
+        pairs = [
+            ("fine-tuned", "natural", "FINE-TUNED - NATURAL"),
+            ("screen", "natural", "SCREEN SCRATCH - NATURAL"),
+            ("fine-tuned", "screen", "FINE-TUNED - SCREEN SCRATCH")
+        ]
+
+    if isinstance(mode, (list, tuple)):
+        modes_to_run = mode
+    elif mode == "all":
+        modes_to_run = ["appeared", "disappeared", "absolute"]
+    elif mode in ["both", "separate", "two"]:
+        modes_to_run = ["appeared", "disappeared"]
+    else:
+        modes_to_run = [mode]
+
+    results = {}
+
+    for current_mode in modes_to_run:
+        fig, axs = plt.subplots(len(pairs), len(layers), figsize=figsize, dpi=dpi)
+
+        grid_matrix = {}
+        table_entries = []
+        k = 0
+
+        for i, (model_b_req, model_a_req, pair_label) in enumerate(pairs):
+            model_b = _find_model_key(filter_data, model_b_req)
+            model_a = _find_model_key(filter_data, model_a_req)
+
+            if not model_b or not model_a or model_b not in filter_data or model_a not in filter_data:
+                print(f"⚠️ Warning: Pair '{model_b_req}' ({model_b}) vs '{model_a_req}' ({model_a}) not found in filter_data keys ({list(filter_data.keys())}). Skipping.")
+                continue
+
+            for j, layer_name in enumerate(layers):
+                if layer_name not in filter_data[model_a] or layer_name not in filter_data[model_b]:
+                    print(f"⚠️ Warning: Layer '{layer_name}' not found for pair ({model_b}, {model_a}). Skipping.")
+                    continue
+
+                p_a = filter_data[model_a][layer_name]
+                p_b = filter_data[model_b][layer_name]
+
+                diff_masks = compute_difference_masks(p_a, p_b, mode=current_mode)
+                mask_list = list(diff_masks.values())
+
+                # Convert to stacked tensor for PyTorch grid layout
+                tensors = []
+                for m in mask_list:
+                    if torch.is_tensor(m):
+                        t = m.detach().cpu().float()
+                    else:
+                        t = torch.from_numpy(np.asarray(m, dtype=np.float32))
+                    while t.ndim > 2 and (t.shape[0] == 1 or t.shape[-1] == 1):
+                        t = t.squeeze()
+                    if t.ndim == 2:
+                        t = t.unsqueeze(0)
+                    tensors.append(t)
+
+                if len(tensors) > 0:
+                    batch = torch.stack(tensors)  # (N, 1, H, W)
+                    n_filters = len(tensors)
+                    grid_cols = nrow if nrow is not None else int(np.ceil(np.sqrt(n_filters)))
+                    grid = vutils.make_grid(batch, nrow=grid_cols, padding=2, normalize=True)
+                    grid_np = grid[0].numpy()  # Extract single channel (H, W) for colormapping
+                    grid_matrix[(i, j)] = grid_np
+
+                letter = _get_subplot_letter(k)
+                table_entries.append((letter, layer_name, _get_model_acronym(model_b), _get_model_acronym(model_a), len(tensors)))
+                k += 1
+
+        if not grid_matrix:
+            print(f"⚠️ Warning: No valid spatial difference mask grids were constructed for mode '{current_mode}'.")
+            plt.close(fig)
+            continue
+
+        # Plot subplots
+        k = 0
+        for i, (model_b_req, model_a_req, pair_label) in enumerate(pairs):
+            model_b = _find_model_key(filter_data, model_b_req)
+            model_a = _find_model_key(filter_data, model_a_req)
+            for j, layer_name in enumerate(layers):
+                if (i, j) not in grid_matrix:
+                    continue
+                grid_img = grid_matrix[(i, j)]
+                letter = table_entries[k][0]
+                k += 1
+
+                ax = axs[i, j] if len(pairs) > 1 and len(layers) > 1 else (axs[i] if len(pairs) > 1 else axs[j])
+                im = ax.imshow(grid_img, cmap=cmap, vmin=0.0, vmax=1.0)
+                ax.set_title(f"({letter})", fontsize=11, fontweight='bold', pad=6)
+                ax.axis('off')
+
+                if j == len(layers) - 1:
+                    fig.colorbar(im, ax=ax, shrink=0.7, label=f"SDM Intensity ({current_mode.capitalize()})")
+
+        print("\n" + "="*80)
+        print(f"🖼️ SPATIAL DIFFERENCE MASKS (SDMs) GRID SUBPLOT MAPPING (MODE: {current_mode.upper()}):")
+        print("="*80)
+        print(f"{'SUBPLOT':<9} | {'LAYER':<20} | {'MODEL B':<12} | {'MODEL A':<12} | {'FILTERS':<10}")
+        print("-" * 80)
+        for let, l_name, m_b, m_a, n_f in table_entries:
+            print(f"({let}){' ':<5} | {l_name:<20} | {m_b:<12} | {m_a:<12} | {n_f:<10}")
+        print("="*80 + "\n")
+
+        plt.tight_layout()
+        if save_path:
+            out_file = save_path if len(modes_to_run) == 1 else (
+                save_path.replace(".png", f"_{current_mode}.png") if save_path.endswith(".png") else f"{save_path}_{current_mode}.png"
+            )
+            plt.savefig(out_file, format='png', bbox_inches='tight', dpi=dpi)
+        plt.show()
+
+        results[current_mode] = grid_matrix
+
+    return results if len(modes_to_run) > 1 else (list(results.values())[0] if results else None)
+
+
+plot_spatial_difference_grid = plot_spatial_difference_masks_grid
+plot_difference_masks_grid = plot_spatial_difference_masks_grid
 
 
 
