@@ -415,7 +415,6 @@ def plot_fourier_diagnostic(image_data, title="Fourier Diagnostic", dc_radius=5,
     axes[3].set_xlabel("Angle θ (degrees)", fontsize=9)
     axes[3].set_title("(d)", fontsize=11, fontweight='bold')
     axes[3].grid(True, linestyle='--', alpha=0.5)
-    axes[3].legend(fontsize=7, loc='upper right')
     
     # Print out subplot legend mapping table before plotting
     print("\n" + "="*70)
@@ -638,8 +637,6 @@ def plot_fourier_angular_distribution_grid(filter_data, models, layers, dc_radiu
             ax.axvspan(o1_low, o1_high, color='blue', alpha=0.2, label=f'Oblique (±{delta}°)')
             ax.axvspan(o2_low, o2_high, color='blue', alpha=0.2)
 
-            ax.legend(fontsize=7, loc='upper right', framealpha=0.8)
-
             ax.set_xticks([0, 45, 90, 135, 180])
             ax.set_xlim(0, 180)
 
@@ -770,8 +767,6 @@ def plot_fourier_angular_difference_grid(filter_data, layers, dc_radius=5, delta
 
             ax.axvspan(o1_low, o1_high, color='blue', alpha=0.15, label=f'Oblique (±{delta}°)')
             ax.axvspan(o2_low, o2_high, color='blue', alpha=0.15)
-
-            ax.legend(fontsize=7, loc='upper right', framealpha=0.8)
 
             ax.set_xticks([0, 45, 90, 135, 180])
             ax.set_xlim(0, 180)
@@ -953,7 +948,6 @@ def plot_synthetic_fourier_difference_demo(dc_radius=5, delta=21, use_log=False,
     axes[1].set_xlabel("Angle θ (degrees)", fontsize=9)
     axes[1].set_ylabel("Norm. Energy" if normalize else "Spectral Energy", fontsize=9)
     axes[1].set_title("(b)", fontsize=11, fontweight="bold", pad=6)
-    axes[1].legend(fontsize=8, loc="upper right")
     axes[1].grid(True, linestyle="--", alpha=0.5)
 
     # Panel 3: Difference Profile
@@ -971,7 +965,6 @@ def plot_synthetic_fourier_difference_demo(dc_radius=5, delta=21, use_log=False,
     axes[2].set_xlabel("Angle θ (degrees)", fontsize=9)
     axes[2].set_ylabel("Δ Norm. Energy" if normalize else "Δ Energy", fontsize=9)
     axes[2].set_title("(c)", fontsize=11, fontweight="bold", pad=6)
-    axes[2].legend(fontsize=8, loc="upper right")
     axes[2].grid(True, linestyle="--", alpha=0.5)
 
     # Print out subplot legend mapping table before plotting
