@@ -3,7 +3,7 @@
 import subprocess
 subprocess.run(["pip", "install", "grad-cam"], check=True)
 
-import torch
+import os
 import numpy as np
 import matplotlib.pyplot as plt
 import cv2
@@ -57,8 +57,8 @@ def get_canny_edge(img, threshold1=30, threshold2=80):
 
 
 
-def plot_random_gradcam_edges(model, target_layers, samples_dict, class_names, file_name, num_samples=5, seed=317,
-                              enrico_resize=False, caltech_resize=False, save_images=False):
+def plot_random_gradcam_edges(model, target_layers, samples_dict, class_names, file_name="gradcam", num_samples=5, seed=317,
+                              enrico_resize=False, caltech_resize=False, save_images=True, figsize=(6.5, 3.5)):
     """
     Executes GradCAM on a random subset of samples from samples_dict, 
     overlaying the resulting heatmaps directly onto their Canny edge maps.
@@ -68,9 +68,10 @@ def plot_random_gradcam_edges(model, target_layers, samples_dict, class_names, f
     - target_layers: Target convolutional layer(s).
     - samples_dict: Dictionary containing {class_idx: image_tensor}.
     - class_names: List or dictionary mapping class indices to string names.
-    - file_name: Base string path/name (e.g., 'results/gradcam_run').
+    - file_name: Base string path/name (e.g., 'gradcam_baseline').
     - num_samples: Number of random unique classes to visualize.
-    - save_images: Whether to save the rendered figures to disk (default False).
+    - save_images: Whether to save the rendered figures to disk (default True).
+    - figsize: Canvas dimensions tuple for the side-by-side comparison figure (default (6.5, 3.5)).
     """
     model.eval()
     
@@ -106,25 +107,29 @@ def plot_random_gradcam_edges(model, target_layers, samples_dict, class_names, f
             edge = get_canny_edge(rgb_image)
             visualization = show_cam_on_image(edge, heatmap, use_rgb=True)
             
-            # Render the 2-image comparison canvas side-by-side
-            fig, axes = plt.subplots(1, 2, figsize=(12, 6))
+            # Render the 2-image comparison canvas side-by-side (compact size)
+            fig, axes = plt.subplots(1, 2, figsize=figsize, dpi=300)
             
             # --- Panel 1: The Baseline Reference ---
             axes[0].imshow(rgb_image)
-            axes[0].set_title(f"Original: {class_names[target]}", fontsize=13, fontweight='bold')
+            axes[0].set_title(f"Original: {class_names[target]}", fontsize=10, fontweight='bold', pad=4)
             axes[0].axis('off')
             
             # --- Panel 2: The Merged Structural Heatmap ---
             axes[1].imshow(visualization)
-            axes[1].set_title("GradCAM Overlayed and Canny Edges", fontsize=13, fontweight='bold')
+            axes[1].set_title("GradCAM Overlayed on Edges", fontsize=10, fontweight='bold', pad=4)
             axes[1].axis('off')
             
-            plt.tight_layout()
+            plt.tight_layout(pad=0.5)
             
             # --- SAVE STEP ---
             if save_images:
-                output_path = f"{file_name}_sample_{idx}.png"
+                class_str = str(class_names[target]).lower().strip().replace(" ", "_").replace("/", "_")
+                output_path = f"{file_name}_{class_str}.png"
+                os.makedirs(os.path.dirname(output_path) if os.path.dirname(output_path) else '.', exist_ok=True)
                 plt.savefig(output_path, bbox_inches='tight', dpi=300)
+
+
             
             # Display plot in the notebook
             plt.show()
