@@ -203,6 +203,88 @@ def compute_difference_masks(patterns_a, patterns_b, mode="appeared"):
     return masks
 
 
+def plot_difference_grid_pairwise(patterns_a, patterns_b, title_suffix, mode="both", nrow=8, padding=4):
+    """
+    Plots directional spatial difference mask grids across matching filter indices.
+    When mode="both" (default), displays two separate grid plots:
+    1. ✨ Appeared / Newly Learned Features (ReLU(I_B - I_A))
+    2. 🍂 Disappeared / Erased Features (ReLU(I_A - I_B))
+    """
+    modes_to_plot = ["appeared", "disappeared"] if mode in ["both", "separate", "all"] else [mode]
+
+    for m in modes_to_plot:
+        diff_masks = compute_difference_masks(patterns_a, patterns_b, mode=m)
+        if not diff_masks:
+            continue
+
+        diff_tensors = []
+        for mask in diff_masks.values():
+            if torch.is_tensor(mask):
+                t = mask.detach().cpu().float()
+            else:
+                t = torch.from_numpy(np.asarray(mask, dtype=np.float32))
+            while t.ndim > 2 and (t.shape[0] == 1 or t.shape[-1] == 1):
+                t = t.squeeze()
+            if t.ndim == 2:
+                t = t.unsqueeze(0)
+            diff_tensors.append(t)
+
+        if len(diff_tensors) == 0:
+            continue
+
+        batch_tensor = torch.stack(diff_tensors, dim=0)
+        grid = vutils.make_grid(batch_tensor, nrow=nrow, padding=padding, normalize=False)
+        grid_np = grid[0].cpu().numpy()
+
+        mode_label = "APPEARED FEATURES (ReLU(I_B - I_A))" if m in ["appeared", "gained", "new"] else \
+                     ("DISAPPEARED FEATURES (ReLU(I_A - I_B))" if m in ["disappeared", "lost", "gone"] else "ABSOLUTE DIFFERENCE (|I_B - I_A|)")
+
+        plt.figure(figsize=(14, 10), dpi=200)
+        im = plt.imshow(grid_np, cmap='hot', vmin=0.0, vmax=0.5)
+
+        plt.title(f"{mode_label} - {title_suffix.upper()}", fontsize=12, fontweight='bold', pad=15)
+        plt.axis('off')
+        plt.colorbar(im, shrink=0.6, label='Structural Representation Change Magnitude')
+        plt.tight_layout()
+        plt.show()
+
+
+def compare_all_domain_states(nat_patterns, ft_patterns, scr_patterns, layer_name="Layer", mode="both"):
+    """
+    Executes pairwise spatial difference grid plotting across all domain pairs,
+    displaying both Appeared and Disappeared feature grids for each pair.
+    Prints a clear layer header banner once to stdout for all figures that follow.
+    """
+    clean_layer = f"FEATURES.{layer_name.upper()}.CONV" if not layer_name.upper().startswith("FEATURES") else layer_name.upper()
+    print(f"\n=======================================================")
+    print(f"📸 SPATIAL DIFFERENCE MASK ANALYSIS FOR LAYER: {clean_layer}")
+    print(f"=======================================================\n")
+
+    # Comparison 1: Fine-Tuned minus Natural (I_B = FT, I_A = NAT)
+    plot_difference_grid_pairwise(
+        nat_patterns,
+        ft_patterns,
+        title_suffix="(Fine-Tuned - Natural)",
+        mode=mode
+    )
+
+    # Comparison 2: Screen-from-Scratch minus Natural (I_B = SCR, I_A = NAT)
+    plot_difference_grid_pairwise(
+        nat_patterns,
+        scr_patterns,
+        title_suffix="(Screen Scratch - Natural)",
+        mode=mode
+    )
+
+    # Comparison 3: Screen-from-Scratch minus Fine-Tuned (I_B = SCR, I_A = FT)
+    plot_difference_grid_pairwise(
+        ft_patterns,
+        scr_patterns,
+        title_suffix="(Screen Scratch - Fine-Tuned)",
+        mode=mode
+    )
+
+
 # ==============================================================================
 # Fourier analysis & Normalized Difference Anisotropy Index (NDI)
 # ==============================================================================
