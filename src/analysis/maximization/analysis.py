@@ -205,12 +205,13 @@ def compute_difference_masks(patterns_a, patterns_b, mode="appeared"):
     return masks
 
 
-def plot_difference_grid_pairwise(patterns_a, patterns_b, title_suffix, mode="both", nrow=8, padding=4):
+def plot_difference_grid_pairwise(patterns_a, patterns_b, title_suffix, mode="both", nrow=8, padding=4, save_path=None, save_path_prefix=None):
     """
     Plots directional spatial difference mask grids across matching filter indices.
     When mode="both" (default), displays two separate grid plots:
     1. ✨ Appeared / Newly Learned Features (ReLU(I_B - I_A))
     2. 🍂 Disappeared / Erased Features (ReLU(I_A - I_B))
+    Saves generated PNG figures to disk if save_path or save_path_prefix is specified.
     """
     modes_to_plot = ["appeared", "disappeared"] if mode in ["both", "separate", "all"] else [mode]
 
@@ -247,29 +248,47 @@ def plot_difference_grid_pairwise(patterns_a, patterns_b, title_suffix, mode="bo
 
         plt.figure(figsize=(14, 10), dpi=200)
         im = plt.imshow(grid_np, cmap='hot', vmin=0.0, vmax=0.5)
+        
+        plt.title(f"{mode_label} - {title_suffix.upper()}", fontsize=12, fontweight='bold', pad=15)
         plt.axis('off')
         plt.colorbar(im, shrink=0.6, label='Structural Representation Change Magnitude')
         plt.tight_layout()
+
+        # Save difference grid figure
+        out_file = save_path
+        if not out_file and save_path_prefix:
+            out_file = f"{save_path_prefix}_{m}.png"
+        if out_file:
+            os.makedirs(os.path.dirname(out_file) if os.path.dirname(out_file) else '.', exist_ok=True)
+            plt.savefig(out_file, bbox_inches='tight', dpi=200)
+            print(f"✅ Saved spatial difference grid to: {out_file}")
+
         plt.show()
+        plt.close()
 
 
-def compare_all_domain_states(nat_patterns, ft_patterns, scr_patterns, layer_name="Layer", mode="both"):
+def compare_all_domain_states(nat_patterns, ft_patterns, scr_patterns, layer_name="Layer", mode="both", save_prefix=None):
     """
     Executes pairwise spatial difference grid plotting across all domain pairs,
     displaying both Appeared and Disappeared feature grids for each pair.
     Prints a clear layer header banner once to stdout for all figures that follow.
+    Automatically saves pairwise spatial difference PNG grids to disk.
     """
     clean_layer = f"FEATURES.{layer_name.upper()}.CONV" if not layer_name.upper().startswith("FEATURES") else layer_name.upper()
+    layer_slug = layer_name.lower().replace(".", "_").replace("features_", "")
     print(f"\n=======================================================")
     print(f"📸 SPATIAL DIFFERENCE MASK ANALYSIS FOR LAYER: {clean_layer}")
     print(f"=======================================================\n")
+
+    p_prefix = save_prefix if save_prefix else f"spatial_diff_{layer_slug}"
 
     # Comparison 1: Fine-Tuned minus Natural (I_B = FT, I_A = NAT)
     plot_difference_grid_pairwise(
         nat_patterns,
         ft_patterns,
         title_suffix="(Fine-Tuned - Natural)",
-        mode=mode
+        mode=mode,
+        save_path_prefix=f"{p_prefix}_ft_vs_nat"
     )
 
     # Comparison 2: Screen-from-Scratch minus Natural (I_B = SCR, I_A = NAT)
@@ -277,7 +296,8 @@ def compare_all_domain_states(nat_patterns, ft_patterns, scr_patterns, layer_nam
         nat_patterns,
         scr_patterns,
         title_suffix="(Screen Scratch - Natural)",
-        mode=mode
+        mode=mode,
+        save_path_prefix=f"{p_prefix}_scr_vs_nat"
     )
 
     # Comparison 3: Screen-from-Scratch minus Fine-Tuned (I_B = SCR, I_A = FT)
@@ -285,7 +305,8 @@ def compare_all_domain_states(nat_patterns, ft_patterns, scr_patterns, layer_nam
         ft_patterns,
         scr_patterns,
         title_suffix="(Screen Scratch - Fine-Tuned)",
-        mode=mode
+        mode=mode,
+        save_path_prefix=f"{p_prefix}_scr_vs_ft"
     )
 
 

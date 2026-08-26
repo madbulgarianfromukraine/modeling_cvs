@@ -59,6 +59,19 @@ def get_canny_edge(img, threshold1=30, threshold2=80):
 
 
 
+def _get_class_label(class_names, target_idx):
+    """Safely retrieves string class label from list or dict without raising IndexError or KeyError."""
+    if isinstance(class_names, dict):
+        if target_idx in class_names:
+            return str(class_names[target_idx])
+        if str(target_idx) in class_names:
+            return str(class_names[str(target_idx)])
+    elif isinstance(class_names, (list, tuple)):
+        if 0 <= int(target_idx) < len(class_names):
+            return str(class_names[int(target_idx)])
+    return f"Class_{target_idx}"
+
+
 def plot_random_gradcam_edges(model, target_layers, samples_dict, class_names, file_name="gradcam", num_samples=5, seed=317,
                               enrico_resize=False, caltech_resize=False, save_images=True, figsize=(6.5, 3.5), image_weight=0.7):
     """
@@ -90,6 +103,8 @@ def plot_random_gradcam_edges(model, target_layers, samples_dict, class_names, f
         target_layers = target_layers
     else:
         target_layers = [target_layers]
+
+    device = next(model.parameters()).device if list(model.parameters()) else torch.device("cpu")
         
     with GradCAM(model=model, target_layers=target_layers) as cam:
         # Use enumerate to track the loop count for naming the files sequentially
@@ -100,8 +115,24 @@ def plot_random_gradcam_edges(model, target_layers, samples_dict, class_names, f
                 image = TF.resize(image, [320, 180])
             elif caltech_resize:
                 image = TF.resize(image, [300, 200])
+
+            input_tensor = image.unsqueeze(0).to(device)
+
+            with torch.no_grad():
+                out = model(input_tensor)
+                num_classes = out.shape[-1]
+                pred_class = int(out.argmax(dim=-1).item())
+
+            target_idx = int(target)
+            if target_idx < 0 or target_idx >= num_classes:
+                print(f"⚠️ Warning: Target class index {target_idx} is out of bounds for model with {num_classes} output classes. Defaulting to top predicted class index {pred_class}.")
+                target_for_cam = pred_class
+            else:
+                target_for_cam = target_idx
+
+            class_label = _get_class_label(class_names, target_idx)
                 
-            heatmap_output = cam(input_tensor=image.unsqueeze(0), targets=[ClassifierOutputTarget(target)])
+            heatmap_output = cam(input_tensor=input_tensor, targets=[ClassifierOutputTarget(target_for_cam)])
             heatmap = heatmap_output[0]
             
             rgb_image = image.permute(1, 2, 0).cpu().numpy()
@@ -119,7 +150,7 @@ def plot_random_gradcam_edges(model, target_layers, samples_dict, class_names, f
             
             # --- Panel 1: The Baseline Reference ---
             axes[0].imshow(rgb_image)
-            axes[0].set_title(f"Original: {class_names[target]}", fontsize=10, fontweight='bold', pad=4)
+            axes[0].set_title(f"Original: {class_label}", fontsize=10, fontweight='bold', pad=4)
             axes[0].axis('off')
             
             # --- Panel 2: The Merged Structural Heatmap ---
@@ -131,13 +162,11 @@ def plot_random_gradcam_edges(model, target_layers, samples_dict, class_names, f
             
             # --- SAVE STEP ---
             if save_images:
-                class_str = str(class_names[target]).lower().strip().replace(" ", "_").replace("/", "_")
+                class_str = class_label.lower().strip().replace(" ", "_").replace("/", "_")
                 output_path = f"{file_name}_{class_str}.png"
                 os.makedirs(os.path.dirname(output_path) if os.path.dirname(output_path) else '.', exist_ok=True)
                 plt.savefig(output_path, bbox_inches='tight', dpi=300)
 
-
-            
             # Display plot in the notebook
             plt.show()
             
