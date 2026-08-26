@@ -58,7 +58,7 @@ def get_canny_edge(img, threshold1=30, threshold2=80):
 
 
 def plot_random_gradcam_edges(model, target_layers, samples_dict, class_names, file_name="gradcam", num_samples=5, seed=317,
-                              enrico_resize=False, caltech_resize=False, save_images=True, figsize=(6.5, 3.5)):
+                              enrico_resize=False, caltech_resize=False, save_images=True, figsize=(6.5, 3.5), image_weight=0.7):
     """
     Executes GradCAM on a random subset of samples from samples_dict, 
     overlaying the resulting heatmaps directly onto their Canny edge maps.
@@ -72,6 +72,7 @@ def plot_random_gradcam_edges(model, target_layers, samples_dict, class_names, f
     - num_samples: Number of random unique classes to visualize.
     - save_images: Whether to save the rendered figures to disk (default True).
     - figsize: Canvas dimensions tuple for the side-by-side comparison figure (default (6.5, 3.5)).
+    - image_weight: Blending weight for background edges in show_cam_on_image (default 0.7 for normal brightness).
     """
     model.eval()
     
@@ -102,10 +103,14 @@ def plot_random_gradcam_edges(model, target_layers, samples_dict, class_names, f
             heatmap = heatmap_output[0]
             
             rgb_image = image.permute(1, 2, 0).cpu().numpy()
-            rgb_image = np.clip(rgb_image, 0, 1)
+            min_v, max_v = rgb_image.min(), rgb_image.max()
+            if max_v > min_v:
+                rgb_image = (rgb_image - min_v) / (max_v - min_v)
+            rgb_image = np.clip(rgb_image, 0.0, 1.0)
             
             edge = get_canny_edge(rgb_image)
-            visualization = show_cam_on_image(edge, heatmap, use_rgb=True)
+            visualization = show_cam_on_image(edge, heatmap, use_rgb=True, image_weight=image_weight)
+
             
             # Render the 2-image comparison canvas side-by-side (compact size)
             fig, axes = plt.subplots(1, 2, figsize=figsize, dpi=300)
