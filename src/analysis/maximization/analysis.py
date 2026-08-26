@@ -248,13 +248,13 @@ def plot_difference_grid_pairwise(patterns_a, patterns_b, title_suffix, mode="bo
         print(f"📊 {mode_label} - {title_suffix.upper()}")
         print(f"=======================================================\n")
 
-        plt.figure(figsize=(14, 10), dpi=200)
+        plt.figure(figsize=(14, 5.5), dpi=200)
         im = plt.imshow(grid_np, cmap='hot', vmin=0.0, vmax=0.5)
         
-        plt.title(f"{mode_label} - {title_suffix.upper()}", fontsize=12, fontweight='bold', pad=15)
         plt.axis('off')
-        plt.colorbar(im, shrink=0.6, label='Structural Representation Change Magnitude')
+        plt.colorbar(im, shrink=0.7, label='Structural Representation Change Magnitude')
         plt.tight_layout()
+
 
         # Save difference grid figure
         out_file = save_path
@@ -1053,7 +1053,7 @@ def plot_spatial_difference_masks_grid(
     pairs=None,
     mode="both",
     nrow=None,
-    figsize=(16, 11),
+    figsize=(16, 6.5),
     dpi=150,
     cmap="hot",
     save_path="spatial_difference_masks_grid.png"
