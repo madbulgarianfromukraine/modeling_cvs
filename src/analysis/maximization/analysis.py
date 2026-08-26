@@ -240,10 +240,12 @@ def plot_difference_grid_pairwise(patterns_a, patterns_b, title_suffix, mode="bo
         mode_label = "APPEARED FEATURES (ReLU(I_B - I_A))" if m in ["appeared", "gained", "new"] else \
                      ("DISAPPEARED FEATURES (ReLU(I_A - I_B))" if m in ["disappeared", "lost", "gone"] else "ABSOLUTE DIFFERENCE (|I_B - I_A|)")
 
+        print(f"\n=======================================================")
+        print(f"📊 {mode_label} - {title_suffix.upper()}")
+        print(f"=======================================================\n")
+
         plt.figure(figsize=(14, 10), dpi=200)
         im = plt.imshow(grid_np, cmap='hot', vmin=0.0, vmax=0.5)
-
-        plt.title(f"{mode_label} - {title_suffix.upper()}", fontsize=12, fontweight='bold', pad=15)
         plt.axis('off')
         plt.colorbar(im, shrink=0.6, label='Structural Representation Change Magnitude')
         plt.tight_layout()
