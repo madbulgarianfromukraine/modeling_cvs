@@ -761,12 +761,21 @@ def plot_fourier_angular_distribution_grid(filter_data, models, layers, dc_radiu
             # Enforce unified per-layer y-limits across models
             ax.set_ylim(layer_ylim[j])
 
-            ax.set_title(f"({letter})", fontsize=11, fontweight='bold', pad=6)
+            # Clean column title on top row
+            layer_names_formatted = ["Layer 1", "Layer 2", "Layer 3", "Layer 4"]
+            layer_str = layer_names_formatted[j] if j < len(layer_names_formatted) else f"Layer {j+1}"
+            
+            if i == 0:
+                ax.set_title(layer_str, fontsize=12, fontweight='bold', pad=8)
+            else:
+                ax.set_title("")
+
             ax.grid(True, linestyle='--', alpha=0.5)
 
             if j == 0:
                 ylabel = ("Norm. Energy" if normalize else "Spectral Energy") + (" (Log Scale)" if log_scale else "")
-                ax.set_ylabel(ylabel, fontsize=9)
+                model_acronym = _get_model_acronym(model_name)
+                ax.set_ylabel(f"{model_acronym}\n({ylabel})", fontsize=10.5, fontweight='bold', labelpad=8)
             if i == len(models) - 1:
                 ax.set_xlabel("Angle θ (degrees)", fontsize=9)
 
@@ -783,7 +792,7 @@ def plot_fourier_angular_distribution_grid(filter_data, models, layers, dc_radiu
     plt.tight_layout()
     if save_path:
         plt.savefig(save_path, format='png', bbox_inches='tight', dpi=dpi)
-    plt.show()
+    plt.close(fig)
 
     has_baseline = any(_find_model_key(filter_data, alias) is not None for alias in ["natural", "nonsc", "baseline"])
     if plot_differences and has_baseline:
@@ -825,22 +834,21 @@ def _get_model_acronym(model_name):
     return str(model_name).upper()[:5]
 
 
-def plot_fourier_angular_difference_grid(filter_data, layers, pairs=None, dc_radius=5, delta=21, use_log=False, use_hann=True, normalize=False, figsize=(16, 11), dpi=150, save_path="fourier_angular_difference_grid.png"):
+def plot_fourier_angular_difference_grid(filter_data, layers, pairs=None, dc_radius=5, delta=21, use_log=False, use_hann=True, normalize=False, figsize=(16, 8), dpi=150, save_path="fourier_angular_difference_grid.png"):
     """
     Plots a grid (len(pairs) x len(layers)) of 1D Angular Energy Difference Profiles:
     - Pair 1: Fine-Tuned minus Natural (FT - NONSC)
     - Pair 2: Screen (Scratch) minus Natural (SC - NONSC)
-    - Pair 3: Fine-Tuned minus Screen (Scratch) (FT - SC)
     Enforces shared symmetrical y_min and y_max per layer column across all difference pairs.
     Subfigure panels are titled (a), (b), (c)... with a mapping legend printed to terminal stdout.
     """
     if pairs is None:
         pairs = [
             ("fine-tuned", "natural", "FINE-TUNED - NATURAL"),
-            ("screen", "natural", "SCREEN SCRATCH - NATURAL"),
-            ("fine-tuned", "screen", "FINE-TUNED - SCREEN SCRATCH")
+            ("screen", "natural", "SCREEN SCRATCH - NATURAL")
         ]
     diff_pairs = pairs
+
 
     fig, axs = plt.subplots(len(diff_pairs), len(layers), figsize=figsize, dpi=dpi)
 
@@ -930,11 +938,21 @@ def plot_fourier_angular_difference_grid(filter_data, layers, pairs=None, dc_rad
             # Enforce unified per-layer y-limits across difference pairs
             ax.set_ylim(layer_diff_ylim[j])
 
-            ax.set_title(f"({letter})", fontsize=11, fontweight='bold', pad=6)
+            # Clean column title on top row
+            layer_names_formatted = ["Layer 1", "Layer 2", "Layer 3", "Layer 4"]
+            layer_str = layer_names_formatted[j] if j < len(layer_names_formatted) else f"Layer {j+1}"
+            
+            if i == 0:
+                ax.set_title(layer_str, fontsize=12, fontweight='bold', pad=8)
+            else:
+                ax.set_title("")
+
             ax.grid(True, linestyle='--', alpha=0.5)
 
             if j == 0:
-                ax.set_ylabel(f"Δ Energy ({acronym_b} - {acronym_a})", fontsize=9, fontweight='bold')
+                ylabel = ("Δ Norm. Energy" if normalize else "Δ Spectral Energy")
+                pair_label = f"{acronym_b} − {acronym_a}"
+                ax.set_ylabel(f"{pair_label}\n({ylabel})", fontsize=10.5, fontweight='bold', labelpad=8)
             if i == len(diff_pairs) - 1:
                 ax.set_xlabel("Angle θ (degrees)", fontsize=9)
 
@@ -952,7 +970,7 @@ def plot_fourier_angular_difference_grid(filter_data, layers, pairs=None, dc_rad
     plt.tight_layout()
     if save_path:
         plt.savefig(save_path, format='png', bbox_inches='tight', dpi=dpi)
-    plt.show()
+    plt.close(fig)
 
     return table_data
 
