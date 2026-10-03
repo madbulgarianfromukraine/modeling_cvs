@@ -1,36 +1,41 @@
 # CNN Thesis Project
 
-Repository skeleton for training and fine-tuning a convolutional neural network for my thesis.
+Repository for training and fine-tuning convolutional neural networks.
 
-Structure
-- `preparatory_phase/` - experiments, data exploration, helper scripts done before main thesis work.
-- `main/` - main training/fine-tuning pipelines, final experiments.
-- `src/` - library code, dataset utilities, model wrappers (no CNN code included for now).
-- `notebooks/` - exploratory notebooks.
-- `data/` - raw and processed datasets (gitignored by default).
-- `tests/` - unit tests and smoke tests.
-- `scripts/` - helper scripts (venv creation, data download, etc.).
+> **Note:** This repository is part of a broader scientific work. You can read the full bachelor thesis and research findings here: [Bachelor Thesis: Modeling CVS](https://madbulgarianfromukraine.github.io/bachelor-thesis-modeling-cvs/)
 
-Setup
-1. Create a virtual environment using the included script (default name: `.uv`):
+## Structure
+- `src/` - Library code, dataset utilities, and analysis notebooks. See `src/README.md` for details on structure and notebooks.
+- `demo/` - Standalone demo scripts for visualizations. See `demo/README.md` for execution instructions.
+- `tests/` - Unit tests and smoke tests.
+- `data/` - Raw and processed datasets (gitignored by default).
 
+## Setup
+
+To set up the project locally:
+
+1. Create a virtual environment:
 ```bash
-bash scripts/create_venv.sh    # creates .uv by default
-source .uv/bin/activate
-python -m pip install -r requirements.txt
+python -m venv .venv
+source .venv/bin/activate
+```
+2. Install dependencies:
+```bash
+pip install -r requirements.txt
 ```
 
-2. See `docs/` for guidance on thesis structure and experiment logging.
+## Running Pipelines
 
-Notes
-- This repo intentionally contains no CNN implementation yet. Add models under `src/` and training code under `main/` as you progress.
+The primary workflows are driven through the Jupyter notebooks located in `src/`. 
 
-Large files and venvs
+- **Model Pipelines**: Run `model.ipynb` (if available) or `src/simple_model/analysis.ipynb` for main analysis.
+- **Data Analysis**: Run `src/data/dataset_analysis.ipynb`.
 
-- Do NOT commit virtual environments (the `.uv/` folder is already in `.gitignore`).
-- Avoid committing large model binaries (PyTorch wheel or pre-trained weights). For large artifacts consider:
-	- Git Large File Storage (Git LFS) for versioned large files.
-	- External storage (S3, GDrive, institutional storage) and store URIs in your experiment metadata.
-	- Keeping package builds (like a full PyTorch wheel) out of git; install them inside the `.uv` venv as needed.
+**Note on Kaggle environments:** If you are running these pipelines in Kaggle notebooks, ensure you mount the correct input paths and adjust dataset directories accordingly, since Kaggle uses a different file structure (e.g., `/kaggle/input/`).
 
+## Tests
 
+To run the test suite, use pytest from the root of the repository:
+```bash
+python -m pytest
+```
